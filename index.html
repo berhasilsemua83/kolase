@@ -32,6 +32,13 @@
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.23.0"
   }
 }
+    <link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#4f46e5">
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js');
+  }
+</script>
 </script>
 <link rel="stylesheet" href="/index.css">
 </head>
