@@ -19,11 +19,11 @@ interface CollageLayout {
 
 interface CellState {
   imageSrc: string | null;
-  imgNaturalW: number;  // ← BARU: simpan dimensi asli gambar
-  imgNaturalH: number;  // ← BARU
-  scale: number;   // 1 = contain (gambar penuh), > 1 = zoom in
-  offsetX: number; // fraksi dari cellW (bukan px) → 0.0 = center
-  offsetY: number; // fraksi dari cellH → 0.0 = center
+  imgNaturalW: number;
+  imgNaturalH: number;
+  scale: number;   // 1 = contain penuh (gambar terlihat semua), > 1 = zoom in
+  offsetX: number; // fraksi visual pan (bukan fraksi cellW mentah)
+  offsetY: number;
 }
 
 // =============================================
@@ -78,9 +78,35 @@ const DEFAULT_CELL = (): CellState => ({
   imgNaturalW: 0,
   imgNaturalH: 0,
   scale: 1,
-  offsetX: 0,   // fraksi dari cellW: -0.5 s/d +0.5
-  offsetY: 0,   // fraksi dari cellH: -0.5 s/d +0.5
+  offsetX: 0,
+  offsetY: 0,
 });
+
+// =============================================
+// HELPER: batas pan bebas
+// Gambar bisa digeser ke mana saja, asal masih ada 20% bagian yang terlihat
+// =============================================
+const calcMaxOffset = (
+  imgW: number, imgH: number,
+  cellW: number, cellH: number,
+  scale: number
+): { maxOffX: number; maxOffY: number } => {
+  if (imgW <= 0 || imgH <= 0) return { maxOffX: 1, maxOffY: 1 };
+  // Contain scale: gambar penuh masuk ke dalam cell
+  const containScale = Math.min(cellW / imgW, cellH / imgH);
+  // Ukuran visual gambar (contain + user zoom)
+  const visW = imgW * containScale * scale;
+  const visH = imgH * containScale * scale;
+  // Batas pan: gambar bisa geser bebas, min 20% gambar tetap terlihat
+  // maxPan screen pixel = (cellSize + visSize) / 2 - visSize * 0.2
+  const maxPanX = (cellW + visW) / 2 - visW * 0.2;
+  const maxPanY = (cellH + visH) / 2 - visH * 0.2;
+  // Convert ke fraksi: screen_delta = offsetX * cellW * scale
+  return {
+    maxOffX: maxPanX / (cellW * scale),
+    maxOffY: maxPanY / (cellH * scale),
+  };
+};
 
 // =============================================
 // CELL EDITOR
@@ -106,42 +132,38 @@ const CellEditor: React.FC<CellEditorProps> = ({
   onDragOver, onDragLeave, onDrop,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
+  const isDragging   = useRef(false);
 
+  // ── DRAG (Mouse) ──
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!cs.imageSrc) return;
     e.preventDefault();
     onSelect(idx);
     isDragging.current = true;
 
-    const startX = e.clientX;
-    const startY = e.clientY;
+    const startX    = e.clientX;
+    const startY    = e.clientY;
     const startOffX = cs.offsetX;
     const startOffY = cs.offsetY;
 
     const onMove = (ev: MouseEvent) => {
       if (!isDragging.current || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
+      const rect  = containerRef.current.getBoundingClientRect();
       const cellW = rect.width;
       const cellH = rect.height;
+      const s     = cs.scale;
 
-      // Hitung contain scale untuk tahu berapa batas geser yg valid
-      const containScale = cs.imgNaturalW > 0 && cs.imgNaturalH > 0
-        ? Math.min(cellW / cs.imgNaturalW, cellH / cs.imgNaturalH)
-        : 1;
-      const renderedW = cs.imgNaturalW * containScale * cs.scale;
-      const renderedH = cs.imgNaturalH * containScale * cs.scale;
+      const { maxOffX, maxOffY } = calcMaxOffset(
+        cs.imgNaturalW, cs.imgNaturalH, cellW, cellH, s
+      );
 
-      // Batas geser: setengah selisih antara gambar yang sudah di-scale dengan ukuran cell
-      const maxOffX = Math.max(0, (renderedW - cellW) / 2) / cellW;
-      const maxOffY = Math.max(0, (renderedH - cellH) / 2) / cellH;
-
-      const deltaFracX = (ev.clientX - startX) / cellW;
-      const deltaFracY = (ev.clientY - startY) / cellH;
+      // Bagi (cellW * s) agar kecepatan drag 1:1 dengan kursor di semua zoom level
+      const dX = (ev.clientX - startX) / (cellW * s);
+      const dY = (ev.clientY - startY) / (cellH * s);
 
       onUpdate(idx, {
-        offsetX: Math.max(-maxOffX, Math.min(maxOffX, startOffX + deltaFracX)),
-        offsetY: Math.max(-maxOffY, Math.min(maxOffY, startOffY + deltaFracY)),
+        offsetX: Math.max(-maxOffX, Math.min(maxOffX, startOffX + dX)),
+        offsetY: Math.max(-maxOffY, Math.min(maxOffY, startOffY + dY)),
       });
     };
 
@@ -154,6 +176,44 @@ const CellEditor: React.FC<CellEditorProps> = ({
     window.addEventListener('mouseup', onUp);
   };
 
+  // ── DRAG (Touch) ──
+  const touchStart = useRef({ x: 0, y: 0, offX: 0, offY: 0 });
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!cs.imageSrc || e.touches.length !== 1) return;
+    onSelect(idx);
+    isDragging.current = true;
+    touchStart.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+      offX: cs.offsetX,
+      offY: cs.offsetY,
+    };
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging.current || e.touches.length !== 1 || !containerRef.current) return;
+    e.preventDefault();
+    const rect  = containerRef.current.getBoundingClientRect();
+    const cellW = rect.width;
+    const cellH = rect.height;
+    const s     = cs.scale;
+
+    const { maxOffX, maxOffY } = calcMaxOffset(
+      cs.imgNaturalW, cs.imgNaturalH, cellW, cellH, s
+    );
+
+    const dX = (e.touches[0].clientX - touchStart.current.x) / (cellW * s);
+    const dY = (e.touches[0].clientY - touchStart.current.y) / (cellH * s);
+
+    onUpdate(idx, {
+      offsetX: Math.max(-maxOffX, Math.min(maxOffX, touchStart.current.offX + dX)),
+      offsetY: Math.max(-maxOffY, Math.min(maxOffY, touchStart.current.offY + dY)),
+    });
+  };
+  const handleTouchEnd = () => { isDragging.current = false; };
+
+  // ── IMAGE STYLE: objectFit contain ──
+  // contain → gambar terlihat penuh, tidak ada bagian yang hilang
+  // transform: scale(s) translate(x%, y%) → panning + zoom
   const getImgStyle = (): React.CSSProperties => {
     if (!cs.imageSrc) return { display: 'none' };
     return {
@@ -181,12 +241,15 @@ const CellEditor: React.FC<CellEditorProps> = ({
         ref={containerRef}
         className={`
           relative w-full h-full overflow-hidden group
-          ${cs.imageSrc ? (isDragging.current ? 'cursor-grabbing' : 'cursor-grab') : ''}
+          ${cs.imageSrc ? 'cursor-grab active:cursor-grabbing' : ''}
           ${isSelected && cs.imageSrc ? 'ring-2 ring-inset ring-indigo-500' : ''}
           ${isDragOver ? 'ring-2 ring-inset ring-indigo-400' : ''}
         `}
         style={{ background: 'rgba(15,23,42,0.9)' }}
         onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         onClick={() => cs.imageSrc && onSelect(idx)}
       >
         {cs.imageSrc ? (
@@ -213,6 +276,15 @@ const CellEditor: React.FC<CellEditorProps> = ({
                 {(cs.scale * 100).toFixed(0)}%
               </span>
             </div>
+
+            {/* Hint geser — muncul saat selected */}
+            {isSelected && (
+              <div className="absolute bottom-1 right-1 pointer-events-none">
+                <span className="text-[8px] text-white/70 bg-black/60 px-1 py-0.5 rounded">
+                  ✋ geser
+                </span>
+              </div>
+            )}
           </>
         ) : isDragOver ? (
           <div className="w-full h-full flex flex-col items-center justify-center gap-1">
@@ -277,7 +349,6 @@ const CollageEditor: React.FC = () => {
     const reader = new FileReader();
     reader.onload = e => {
       const src = e.target?.result as string;
-      // Baca dimensi asli gambar saat upload
       const img = new Image();
       img.onload = () => {
         updateCell(i, {
@@ -316,25 +387,28 @@ const CollageEditor: React.FC = () => {
     };
   }, [gap]);
 
-  // Zoom slider: klempit offset agar tidak keluar saat scale dikurangi
+  // ── Zoom: clamp offset agar tidak keluar setelah scale turun ──
   const handleScaleChange = useCallback((i: number, newScale: number) => {
     setCells(prev => prev.map((c, ci) => {
       if (ci !== i) return c;
-      // Saat scale turun, offset mungkin jadi terlalu besar → clamp
-      // Kita tidak tahu cell size dalam px di sini, tapi kita tahu:
-      // maxOffset (fraksi) = (scale - 1) / (2 * scale) saat gambar mengisi penuh
-      // Pendekatan sederhana: clamp ke ± (newScale-1)/2
-      const maxOff = Math.max(0, (newScale - 1) / 2);
+      // Gunakan dummy cell size untuk estimasi — offset diclamped saat drag berikutnya
+      // Approximasi: pakai formula cover sederhana
+      const imgW = c.imgNaturalW || 1;
+      const imgH = c.imgNaturalH || 1;
+      // Estimasi cell ratio dari layout (tidak ada ukuran px di sini)
+      // Gunakan 1:1 sebagai estimasi — drag handler akan rekalkulasi tepat
+      const { maxOffX, maxOffY } = calcMaxOffset(imgW, imgH, imgW, imgH, newScale);
       return {
         ...c,
         scale: newScale,
-        offsetX: Math.max(-maxOff, Math.min(maxOff, c.offsetX)),
-        offsetY: Math.max(-maxOff, Math.min(maxOff, c.offsetY)),
+        offsetX: Math.max(-maxOffX, Math.min(maxOffX, c.offsetX)),
+        offsetY: Math.max(-maxOffY, Math.min(maxOffY, c.offsetY)),
       };
     }));
   }, []);
 
-  // Export canvas — menggunakan objectFit:contain + CSS transform yang sama
+  // ── Export Canvas ──
+  // Menggunakan contain logic yang SAMA dengan CSS preview
   const handleExport = async () => {
     setIsExporting(true);
     try {
@@ -371,32 +445,31 @@ const CollageEditor: React.FC = () => {
           if (im.complete && im.naturalWidth > 0) res(im);
         });
 
-        // Replikasi persis: objectFit:contain → scale(cs.scale) → translate(offsetX%, offsetY%)
-        // Step 1: contain scale
+        // ── CONTAIN MATH (sama persis dengan CSS objectFit:contain + transform) ──
+        // Step 1: contain scale — gambar penuh masuk ke cell
         const containScale = Math.min(cW / img.naturalWidth, cH / img.naturalHeight);
-        // Step 2: rendered size setelah contain
+        // Step 2: ukuran gambar setelah contain
         const containW = img.naturalWidth  * containScale;
         const containH = img.naturalHeight * containScale;
         // Step 3: terapkan user scale (zoom)
         const finalW = containW * cs.scale;
         const finalH = containH * cs.scale;
-        // Step 4: posisi awal (center dari cell) — sama seperti objectPosition:center
-        const baseCX = cX + (cW - containW) / 2;
-        const baseCY = cY + (cH - containH) / 2;
-        // Step 5: terapkan zoom dari center contain
-        const zoomOriginX = baseCX + containW / 2;
-        const zoomOriginY = baseCY + containH / 2;
-        const afterZoomX = zoomOriginX - finalW / 2;
-        const afterZoomY = zoomOriginY - finalH / 2;
-        // Step 6: terapkan offset (fraksi dari cW/cH, seperti translate di CSS)
-        const finalX = afterZoomX + cs.offsetX * cW;
-        const finalY = afterZoomY + cs.offsetY * cH;
+        // Step 4: pusat cell
+        const cellCX = cX + cW / 2;
+        const cellCY = cY + cH / 2;
+        // Step 5: pusat gambar setelah panning
+        // CSS: scale(s) translate(offsetX*100%, offsetY*100%) → screen shift = offsetX * cW * scale
+        const imgCX = cellCX + cs.offsetX * cW * cs.scale;
+        const imgCY = cellCY + cs.offsetY * cH * cs.scale;
+        // Step 6: posisi draw
+        const drawX = imgCX - finalW / 2;
+        const drawY = imgCY - finalH / 2;
 
         ctx.save();
         ctx.beginPath();
         ctx.rect(cX, cY, cW, cH);
         ctx.clip();
-        ctx.drawImage(img, finalX, finalY, finalW, finalH);
+        ctx.drawImage(img, drawX, drawY, finalW, finalH);
         ctx.restore();
       }
 
@@ -483,13 +556,13 @@ const CollageEditor: React.FC = () => {
 
                     <div className="flex items-center gap-2">
                       <button type="button"
-                        onClick={() => handleScaleChange(selectedCell!, Math.max(1, selCs.scale - 0.1))}
+                        onClick={() => handleScaleChange(selectedCell!, Math.max(0.3, selCs.scale - 0.1))}
                         className="w-8 h-8 flex-shrink-0 bg-slate-700 hover:bg-slate-600 text-white rounded-lg flex items-center justify-center text-lg font-bold transition-colors select-none"
                       >−</button>
 
                       <input
                         type="range"
-                        min={100} max={300} step={1}
+                        min={30} max={300} step={1}
                         value={Math.round(selCs.scale * 100)}
                         onChange={e => handleScaleChange(selectedCell!, Number(e.target.value) / 100)}
                         className="flex-1 h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"
@@ -502,17 +575,18 @@ const CollageEditor: React.FC = () => {
                     </div>
 
                     <div className="flex justify-between text-[10px] text-slate-500 mt-1 px-10">
-                      <span>100% (penuh)</span>
+                      <span>30% (kecil)</span>
                       <span>300% (zoom)</span>
                     </div>
                   </div>
 
                   {/* Hint geser */}
-                  <div className="flex items-center gap-2 bg-slate-700/40 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2 bg-indigo-900/30 border border-indigo-700/40 rounded-lg px-3 py-2">
                     <span className="text-base">✋</span>
-                    <span className="text-[11px] text-slate-400">
-                      Drag foto di preview untuk menggeser area yang tampil
-                    </span>
+                    <div>
+                      <p className="text-[11px] text-indigo-300 font-semibold">Drag langsung untuk geser posisi</p>
+                      <p className="text-[10px] text-slate-500">Scale=1 → gambar penuh terlihat. Zoom in → bisa crop bagian tertentu</p>
+                    </div>
                   </div>
                 </>
               ) : (
@@ -650,6 +724,16 @@ const CollageEditor: React.FC = () => {
               ))}
             </div>
             <span className="text-xs text-slate-500">{filledCount} / {selectedLayout.cells.length} foto</span>
+          </div>
+
+          {/* Tips */}
+          <div className="mt-3 bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 space-y-1">
+            <p className="text-[10px] font-semibold text-slate-400">💡 Tips penggunaan:</p>
+            <p className="text-[10px] text-slate-500">1. Klik foto di preview untuk memilih (border biru muncul)</p>
+            <p className="text-[10px] text-slate-500">2. <span className="text-slate-300 font-medium">Drag langsung</span> di atas foto untuk geser posisi</p>
+            <p className="text-[10px] text-slate-500">3. Slider/tombol +/− untuk zoom in (crop) atau zoom out (kecilkan)</p>
+            <p className="text-[10px] text-slate-500">4. Scale 100% = gambar penuh terlihat, tidak ada yang terpotong</p>
+            <p className="text-[10px] text-slate-500">5. Klik ↺ Reset untuk kembali ke posisi tengah</p>
           </div>
         </div>
 
