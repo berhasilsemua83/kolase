@@ -415,12 +415,6 @@ const CollageEditor: React.FC = () => {
   const handleRemove   = useCallback((i: number) => { updateCell(i, DEFAULT_CELL()); setSelectedCell(null); }, [updateCell]);
   const handleDragOver = useCallback((e: React.DragEvent, i: number) => { e.preventDefault(); setDragOverCell(i); }, []);
   const handleDragLeave= useCallback(() => setDragOverCell(null), []);
-  const handleDrop     = useCallback((e: React.DragEvent, i: number) => {
-    e.preventDefault(); setDragOverCell(null);
-    const f = e.dataTransfer.files[0];
-    if (f) { handleUpload(i, f); setSelectedCell(i); }
-  }, []);
-
   const handleUpload = useCallback((i: number, file: File) => {
     if (!file.type.startsWith('image/')) return;
     const reader = new FileReader();
@@ -432,6 +426,14 @@ const CollageEditor: React.FC = () => {
     };
     reader.readAsDataURL(file);
   }, [updateCell]);
+
+
+  const handleDrop     = useCallback((e: React.DragEvent, i: number) => {
+    e.preventDefault(); setDragOverCell(null);
+    const f = e.dataTransfer.files[0];
+    if (f) { handleUpload(i, f); setSelectedCell(i); }
+  }, []);
+
 
   // getCellStyle: untuk kotak pakai rect+gap, untuk shaped pakai 100%x100%+clipPath
   const getCellStyle = useCallback((cell: CollageCell): React.CSSProperties => {
