@@ -507,57 +507,7 @@ const CollageEditor: React.FC = () => {
             </div>
           </div>
 
-          {/* Kontrol foto terpilih */}
-          <div className={`rounded-xl border transition-all duration-200 overflow-hidden ${selCs?.imageSrc ? 'border-indigo-500/60 bg-indigo-950/40' : 'border-slate-700 bg-slate-800/40'}`}>
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-700/50">
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${selCs?.imageSrc ? 'bg-indigo-400 animate-pulse' : 'bg-slate-600'}`} />
-                <span className="text-sm font-semibold text-slate-300">
-                  {selectedCell !== null && selCs?.imageSrc ? `Foto ${selectedCell + 1} Dipilih` : 'Klik foto untuk edit'}
-                </span>
-              </div>
-              {selCs?.imageSrc && (
-                <button type="button" onClick={() => updateCell(selectedCell!, { scale: 1, offsetX: 0, offsetY: 0 })}
-                  className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-700/50 hover:bg-slate-700 transition-colors">↺ Reset</button>
-              )}
-            </div>
-            <div className="px-4 py-3 space-y-4">
-              {selCs?.imageSrc ? (
-                <>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/>
-                        </svg>
-                        Zoom / Perbesar
-                      </label>
-                      <span className="text-sm font-bold text-indigo-400 font-mono bg-slate-700 px-2 py-0.5 rounded">{(selCs.scale * 100).toFixed(0)}%</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => handleScaleChange(selectedCell!, Math.max(0.3, selCs.scale - 0.1))}
-                        className="w-8 h-8 flex-shrink-0 bg-slate-700 hover:bg-slate-600 text-white rounded-lg flex items-center justify-center text-lg font-bold transition-colors select-none">−</button>
-                      <input type="range" min={30} max={300} step={1} value={Math.round(selCs.scale * 100)}
-                        onChange={e => handleScaleChange(selectedCell!, Number(e.target.value) / 100)}
-                        className="flex-1 h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
-                      <button type="button" onClick={() => handleScaleChange(selectedCell!, Math.min(3, selCs.scale + 0.1))}
-                        className="w-8 h-8 flex-shrink-0 bg-slate-700 hover:bg-slate-600 text-white rounded-lg flex items-center justify-center text-lg font-bold transition-colors select-none">+</button>
-                    </div>
-                    <div className="flex justify-between text-[10px] text-slate-500 mt-1 px-10"><span>30%</span><span>300%</span></div>
-                  </div>
-                  <div className="flex items-center gap-2 bg-indigo-900/30 border border-indigo-700/40 rounded-lg px-3 py-2">
-                    <span className="text-base">✋</span>
-                    <div>
-                      <p className="text-[11px] text-indigo-300 font-semibold">Drag langsung untuk geser posisi</p>
-                      <p className="text-[10px] text-slate-500">Zoom in → drag untuk crop bagian tertentu</p>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <p className="text-xs text-slate-500 text-center py-3">Upload foto ke slot, lalu klik untuk mengatur zoom &amp; posisi</p>
-              )}
-            </div>
-          </div>
+
 
           {/* Gap */}
           <div>
@@ -701,7 +651,7 @@ const CollageEditor: React.FC = () => {
             ))}
           </div>
 
-          {/* Progress */}
+          {/* Progress dots */}
           <div className="flex items-center gap-2 mt-2">
             <div className="flex gap-1">
               {selectedLayout.cells.map((_, i) => (
@@ -711,14 +661,65 @@ const CollageEditor: React.FC = () => {
             <span className="text-xs text-slate-500">{filledCount} / {selectedLayout.cells.length} foto</span>
           </div>
 
-          {/* Tips */}
-          <div className="mt-3 bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 space-y-1">
-            <p className="text-[10px] font-semibold text-slate-400">💡 Tips penggunaan:</p>
-            <p className="text-[10px] text-slate-500">1. Klik foto di preview untuk memilih (border biru muncul)</p>
-            <p className="text-[10px] text-slate-500">2. <span className="text-slate-300 font-medium">Drag langsung</span> di atas foto untuk geser posisi</p>
-            <p className="text-[10px] text-slate-500">3. Slider/tombol +/− untuk zoom in (crop) atau zoom out (kecilkan)</p>
-            <p className="text-[10px] text-slate-500">4. Layout diagonal/gelombang: warna background sebagai pemisah</p>
-            <p className="text-[10px] text-slate-500">5. Klik ↺ Reset untuk kembali ke posisi tengah</p>
+          {/* ZOOM CONTROLS DI BAWAH PREVIEW */}
+          <div className={`mt-3 rounded-xl border transition-all duration-200 overflow-hidden ${selCs?.imageSrc ? 'border-indigo-500/50 bg-indigo-950/30' : 'border-slate-700/50 bg-slate-800/30'}`}>
+            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
+              <div className="flex items-center gap-2">
+                <div className={`w-1.5 h-1.5 rounded-full ${selCs?.imageSrc ? 'bg-indigo-400 animate-pulse' : 'bg-slate-600'}`}/>
+                <span className="text-xs font-semibold text-slate-300">
+                  {selectedCell !== null && selCs?.imageSrc ? `Zoom Foto ${selectedCell + 1}` : 'Klik foto untuk zoom & geser'}
+                </span>
+              </div>
+              {selCs?.imageSrc && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-indigo-400 font-mono bg-slate-700 px-2 py-0.5 rounded">
+                    {(selCs.scale * 100).toFixed(0)}%
+                  </span>
+                  <button type="button"
+                    onClick={() => updateCell(selectedCell!, { scale: 1, offsetX: 0, offsetY: 0 })}
+                    className="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded bg-slate-700/50 hover:bg-slate-700 transition-colors">
+                    ↺ Reset
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="px-3 py-3">
+              {selCs?.imageSrc ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <button type="button"
+                      onClick={() => handleScaleChange(selectedCell!, Math.max(0.3, selCs.scale - 0.1))}
+                      className="w-10 h-10 flex-shrink-0 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white rounded-xl flex items-center justify-center text-xl font-bold transition-colors select-none touch-manipulation">
+                      −
+                    </button>
+                    <input
+                      type="range" min={30} max={300} step={1}
+                      value={Math.round(selCs.scale * 100)}
+                      onChange={e => handleScaleChange(selectedCell!, Number(e.target.value) / 100)}
+                      className="flex-1 h-3 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"
+                    />
+                    <button type="button"
+                      onClick={() => handleScaleChange(selectedCell!, Math.min(3, selCs.scale + 0.1))}
+                      className="w-10 h-10 flex-shrink-0 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white rounded-xl flex items-center justify-center text-xl font-bold transition-colors select-none touch-manipulation">
+                      +
+                    </button>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-500 px-12">
+                    <span>Kecil</span>
+                    <span>✋ Drag foto untuk geser</span>
+                    <span>Zoom</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500 text-center py-1">
+                  Upload &amp; klik foto di preview, lalu zoom di sini
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-2 text-[10px] text-slate-600 text-center">
+            Layout diagonal/gelombang: ubah warna background untuk efek pemisah berbeda
           </div>
         </div>
 
