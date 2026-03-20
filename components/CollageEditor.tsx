@@ -335,22 +335,73 @@ const CellEditor: React.FC<CellEditorProps> = ({
 // =============================================
 // MAIN COMPONENT
 // =============================================
-const CollageEditor: React.FC = () => {
-  const [selectedLayout, setSelectedLayout] = useState<CollageLayout>(COLLAGE_LAYOUTS[0]);
-  const [aspectRatio, setAspectRatio]       = useState('1:1');
-  const [gap, setGap]                       = useState(4);
-  const [bgColor, setBgColor]               = useState('#000000');
-  const [cells, setCells]                   = useState<CellState[]>([DEFAULT_CELL()]);
-  const [filterCount, setFilterCount]       = useState<number | null>(null);
-  const [filterCat, setFilterCat]           = useState<string | null>(null);
-  const [isExporting, setIsExporting]       = useState(false);
-  const [dragOverCell, setDragOverCell]     = useState<number | null>(null);
-  const [selectedCell, setSelectedCell]     = useState<number | null>(null);
 
-  useEffect(() => {
-    setCells(prev => selectedLayout.cells.map((_, i) => prev[i] ?? DEFAULT_CELL()));
+// Tipe foto yang di-staging (bebas dari layout)
+interface StagedPhoto {
+  imageSrc: string;
+  imgNaturalW: number;
+  imgNaturalH: number;
+}
+
+const CollageEditor: React.FC = () => {
+  // ── Staging: foto dulu, layout menyesuaikan ──
+  const [staged, setStaged]             = useState<(StagedPhoto | null)[]>([null, null]);
+  const [selectedLayout, setSelectedLayout] = useState<CollageLayout | null>(null);
+  const [cells, setCells]               = useState<CellState[]>([]);
+
+  const [aspectRatio, setAspectRatio]   = useState('1:1');
+  const [gap, setGap]                   = useState(4);
+  const [bgColor, setBgColor]           = useState('#000000');
+  const [filterCat, setFilterCat]       = useState<string | null>(null);
+  const [isExporting, setIsExporting]   = useState(false);
+  const [dragOverStaged, setDragOverStaged] = useState<number | null>(null);
+  const [dragOverCell, setDragOverCell] = useState<number | null>(null);
+  const [selectedCell, setSelectedCell] = useState<number | null>(null);
+
+  // Jumlah foto yang sudah diisi di staging
+  const filledCount = staged.filter(s => s !== null).length;
+
+  // Layout yang cocok = photoCount === filledCount (hanya tampil jika ada foto)
+  const matchingLayouts = filledCount > 0
+    ? COLLAGE_LAYOUTS.filter(l =>
+        l.photoCount === filledCount &&
+        (filterCat === null || l.category === filterCat)
+      )
+    : [];
+
+  // Saat layout dipilih: distribusi foto staging ke cells
+  const handleSelectLayout = useCallback((layout: CollageLayout) => {
+    setSelectedLayout(layout);
     setSelectedCell(null);
-  }, [selectedLayout]);
+    const newCells: CellState[] = layout.cells.map((_, i) => {
+      const s = staged[i];
+      if (s) return { imageSrc: s.imageSrc, imgNaturalW: s.imgNaturalW, imgNaturalH: s.imgNaturalH, scale: 1, offsetX: 0, offsetY: 0 };
+      return DEFAULT_CELL();
+    });
+    setCells(newCells);
+  }, [staged]);
+
+  // Saat foto staging berubah & layout sudah dipilih: sync cells
+  useEffect(() => {
+    if (!selectedLayout) return;
+    // Jika jumlah foto staging tidak cocok lagi dengan layout, reset layout
+    if (filledCount !== selectedLayout.photoCount) {
+      setSelectedLayout(null);
+      setCells([]);
+      return;
+    }
+    // Update cells dari staged terbaru, pertahankan scale/offset yang sudah diatur
+    setCells(prev => selectedLayout.cells.map((_, i) => {
+      const s = staged[i];
+      const existing = prev[i];
+      if (s) {
+        // Jika gambar sama, pertahankan posisi; jika beda, reset
+        if (existing?.imageSrc === s.imageSrc) return existing;
+        return { imageSrc: s.imageSrc, imgNaturalW: s.imgNaturalW, imgNaturalH: s.imgNaturalH, scale: 1, offsetX: 0, offsetY: 0 };
+      }
+      return DEFAULT_CELL();
+    }));
+  }, [staged, selectedLayout, filledCount]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -361,32 +412,56 @@ const CollageEditor: React.FC = () => {
     return () => window.removeEventListener('mousedown', handler);
   }, []);
 
-  const updateCell = useCallback((i: number, patch: Partial<CellState>) => {
-    setCells(prev => prev.map((c, ci) => ci !== i ? c : { ...c, ...patch }));
-  }, []);
-
-  const handleUpload = useCallback((i: number, file: File) => {
+  // Upload ke staging
+  const uploadToStaged = useCallback((i: number, file: File) => {
     if (!file.type.startsWith('image/')) return;
     const reader = new FileReader();
     reader.onload = e => {
       const src = e.target?.result as string;
       const img = new Image();
-      img.onload = () => updateCell(i, { imageSrc: src, imgNaturalW: img.naturalWidth, imgNaturalH: img.naturalHeight, scale: 1, offsetX: 0, offsetY: 0 });
+      img.onload = () => {
+        setStaged(prev => {
+          const next = [...prev];
+          next[i] = { imageSrc: src, imgNaturalW: img.naturalWidth, imgNaturalH: img.naturalHeight };
+          return next;
+        });
+      };
       img.src = src;
     };
     reader.readAsDataURL(file);
-  }, [updateCell]);
+  }, []);
 
-  const handleRemove    = useCallback((i: number) => { updateCell(i, DEFAULT_CELL()); setSelectedCell(null); }, [updateCell]);
-  const handleDragOver  = useCallback((e: React.DragEvent, i: number) => { e.preventDefault(); setDragOverCell(i); }, []);
-  const handleDragLeave = useCallback(() => setDragOverCell(null), []);
-  const handleDrop      = useCallback((e: React.DragEvent, i: number) => {
+  // Tambah slot foto
+  const addSlot = useCallback(() => {
+    if (staged.length >= 6) return;
+    setStaged(prev => [...prev, null]);
+  }, [staged.length]);
+
+  // Hapus slot foto
+  const removeSlot = useCallback((i: number) => {
+    setStaged(prev => {
+      const next = prev.filter((_, idx) => idx !== i);
+      return next.length === 0 ? [null] : next;
+    });
+    setSelectedLayout(null);
+    setCells([]);
+    setSelectedCell(null);
+  }, []);
+
+  // Update cell (zoom/pan di preview)
+  const updateCell = useCallback((i: number, patch: Partial<CellState>) => {
+    setCells(prev => prev.map((c, ci) => ci !== i ? c : { ...c, ...patch }));
+  }, []);
+
+  const handleRemoveCell  = useCallback((i: number) => { updateCell(i, DEFAULT_CELL()); setSelectedCell(null); }, [updateCell]);
+  const handleDragOver    = useCallback((e: React.DragEvent, i: number) => { e.preventDefault(); setDragOverCell(i); }, []);
+  const handleDragLeave   = useCallback(() => setDragOverCell(null), []);
+  const handleDrop        = useCallback((e: React.DragEvent, i: number) => {
     e.preventDefault(); setDragOverCell(null);
     const f = e.dataTransfer.files[0];
-    if (f) { handleUpload(i, f); setSelectedCell(i); }
-  }, [handleUpload]);
+    if (f) { uploadToStaged(i, f); }
+  }, [uploadToStaged]);
 
-  // getCellStyle: untuk kotak pakai padding+rect, untuk shaped pakai 100%+clipPath
   const getCellStyle = useCallback((cell: CollageCell): React.CSSProperties => {
     if (cell.clip) {
       return { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', clipPath: toClip(cell.clip) };
@@ -412,6 +487,7 @@ const CollageEditor: React.FC = () => {
   }, []);
 
   const handleExport = async () => {
+    if (!selectedLayout) return;
     setIsExporting(true);
     try {
       const [expW, expH] = aspectRatio.split(':').map(Number);
@@ -477,250 +553,375 @@ const CollageEditor: React.FC = () => {
   };
 
   const [arW, arH] = aspectRatio.split(':').map(Number);
-  const photoCounts = [...new Set(COLLAGE_LAYOUTS.map(l => l.photoCount))].sort((a, b) => a - b);
-  const categories  = ['kotak', 'diagonal', 'chevron', 'gelombang'];
-  const filteredLayouts = COLLAGE_LAYOUTS.filter(l =>
-    (filterCount === null || l.photoCount === filterCount) &&
-    (filterCat   === null || l.category  === filterCat)
-  );
-  const filledCount = cells.filter(c => c?.imageSrc).length;
-  const selCs       = selectedCell !== null ? cells[selectedCell] : null;
+  const categories = ['kotak', 'diagonal', 'chevron', 'gelombang'];
+  const selCs = selectedCell !== null ? cells[selectedCell] : null;
+
+  // Step aktif: 1 = upload foto, 2 = pilih layout, 3 = atur & download
+  const step = filledCount === 0 ? 1 : !selectedLayout ? 2 : 3;
 
   return (
     <div className="space-y-6" data-collage-area>
+
+      {/* ── STEP INDICATOR ── */}
+      <div className="flex items-center gap-2">
+        {[
+          { n:1, label:'Upload Foto' },
+          { n:2, label:'Pilih Layout' },
+          { n:3, label:'Atur & Download' },
+        ].map((s, idx) => (
+          <React.Fragment key={s.n}>
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+              step === s.n ? 'bg-indigo-600 text-white shadow-lg' :
+              step > s.n  ? 'bg-indigo-900/50 text-indigo-400' :
+              'bg-slate-700/50 text-slate-500'
+            }`}>
+              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
+                step > s.n ? 'bg-indigo-500 text-white' : step === s.n ? 'bg-white text-indigo-600' : 'bg-slate-600 text-slate-400'
+              }`}>{step > s.n ? '✓' : s.n}</span>
+              {s.label}
+            </div>
+            {idx < 2 && <div className={`flex-1 h-0.5 rounded ${step > s.n ? 'bg-indigo-600' : 'bg-slate-700'}`}/>}
+          </React.Fragment>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
         {/* ═══ PANEL KIRI ═══ */}
         <div className="space-y-5">
 
-          {/* Aspek Rasio */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wide">Aspek Rasio Output</label>
-            <div className="grid grid-cols-3 gap-2">
-              {ASPECT_OPTIONS.map(opt => (
-                <button key={opt.value} type="button" onClick={() => setAspectRatio(opt.value)}
-                  className={`py-2 px-2 rounded-lg text-center transition-all border ${aspectRatio === opt.value ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:border-indigo-500/50'}`}>
-                  <div className="text-sm font-bold">{opt.label}</div>
-                  <div className="text-[10px] opacity-70">{opt.sub}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-
-
-          {/* Gap */}
-          <div>
-            <div className="flex justify-between items-center mb-2">
-              <label className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Jarak Antar Foto</label>
-              <span className="text-sm font-bold text-indigo-400 bg-slate-700 px-2 py-0.5 rounded">{gap}px</span>
-            </div>
-            <input type="range" min={0} max={24} value={gap} onChange={e => setGap(Number(e.target.value))}
-              className="w-full h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
-            <div className="flex justify-between text-xs text-slate-500 mt-1"><span>Tanpa Jarak</span><span>Lebar</span></div>
-            {selectedLayout.cells.some(c => c.clip) && (
-              <p className="text-[10px] text-amber-400/60 mt-1">⚡ Jarak tidak berlaku untuk layout berbentuk — background terlihat sebagai pemisah</p>
-            )}
-          </div>
-
-          {/* Background */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wide">Warna Background</label>
-            <div className="flex items-center gap-3 mb-2">
-              <label className="w-10 h-10 rounded-lg cursor-pointer border-2 border-slate-600 hover:border-indigo-500 overflow-hidden flex-shrink-0" style={{ background: bgColor }}>
-                <input type="color" value={bgColor} onChange={e => setBgColor(e.target.value)} className="opacity-0 w-0 h-0" />
-              </label>
-              <input type="text" value={bgColor} onChange={e => setBgColor(e.target.value)}
-                className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-indigo-500"/>
-            </div>
-            <div className="flex gap-1.5 flex-wrap">
-              {BG_PRESETS.map(c => (
-                <button key={c} type="button" onClick={() => setBgColor(c)}
-                  className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 ${bgColor === c ? 'border-white scale-110' : 'border-slate-600'}`}
-                  style={{ background: c }}/>
-              ))}
-            </div>
-          </div>
-
-          {/* Layout */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wide">Pilih Layout Kolase</label>
-
-            {/* Filter jumlah foto */}
-            <div className="flex gap-1.5 mb-2 flex-wrap">
-              <button type="button" onClick={() => setFilterCount(null)}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${filterCount === null ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>Semua</button>
-              {photoCounts.map(n => (
-                <button key={n} type="button" onClick={() => setFilterCount(n === filterCount ? null : n)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${filterCount === n ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>{n} Foto</button>
-              ))}
-            </div>
-
-            {/* Filter bentuk */}
-            <div className="flex gap-1.5 mb-3 flex-wrap">
-              <button type="button" onClick={() => setFilterCat(null)}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${filterCat === null ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>Semua Bentuk</button>
-              {categories.map(cat => (
-                <button key={cat} type="button" onClick={() => setFilterCat(cat === filterCat ? null : cat)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${filterCat === cat ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>
-                  {CATEGORY_LABELS[cat]}
-                </button>
-              ))}
-            </div>
-
-            {/* Grid thumbnail — KUNCI: div shaped pakai clipPath supaya thumbnail tampil bentuknya */}
-            <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-64 overflow-y-auto pr-1">
-              {filteredLayouts.map(layout => {
-                const isActive = selectedLayout.id === layout.id;
-                const isShaped = layout.cells.some(c => c.clip);
-                return (
-                  <button key={layout.id} type="button" onClick={() => setSelectedLayout(layout)} title={layout.name}
-                    className={`group rounded-lg overflow-hidden transition-all ${isActive ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-slate-800 scale-105' : 'ring-1 ring-slate-600 hover:ring-indigo-400'}`}>
-                    {/* Thumbnail preview area */}
-                    <div className={`aspect-square relative overflow-hidden ${isShaped ? 'bg-slate-950' : 'bg-slate-900'}`}>
-                      {layout.cells.map((cell, ci) => (
-                        <div key={ci}
-                          className={`absolute ${isActive ? 'bg-indigo-500/80' : 'bg-slate-500/70 group-hover:bg-indigo-400/60'}`}
-                          style={cell.clip
-                            ? {
-                                left: 0, top: 0, width: '100%', height: '100%',
-                                clipPath: toClip(cell.clip),
-                                // border tipis via outline agar bentuk kelihatan
-                                outline: '0.5px solid rgba(15,23,42,0.8)',
-                                outlineOffset: '-0.5px',
-                              }
-                            : {
-                                left: `${cell.x}%`, top: `${cell.y}%`,
-                                width: `${cell.w}%`, height: `${cell.h}%`,
-                                border: '1px solid rgba(15,23,42,0.8)',
-                              }
-                          }
-                        />
-                      ))}
-                    </div>
-                    <div className="bg-slate-800 px-1 py-0.5">
-                      <p className="text-[8px] text-slate-400 truncate text-center">{layout.name}</p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Export */}
-          <div className="pt-2">
-            <button type="button" onClick={handleExport} disabled={isExporting}
-              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg hover:from-indigo-500 hover:to-purple-500 transition-all disabled:opacity-50 flex items-center justify-center gap-2.5">
-              {isExporting
-                ? <><svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Mengekspor...</>
-                : <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Download Kolase (PNG)</>
-              }
-            </button>
-            <p className="text-center text-xs text-slate-500 mt-1.5">Output 1080px × aspek rasio terpilih</p>
-          </div>
-        </div>
-
-        {/* ═══ PANEL KANAN: Preview ═══ */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Preview Kolase</span>
-            <div className="flex items-center gap-2">
-              <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${
-                selectedLayout.category === 'diagonal'  ? 'bg-amber-600/30 text-amber-300' :
-                selectedLayout.category === 'chevron'   ? 'bg-green-600/30 text-green-300' :
-                selectedLayout.category === 'gelombang' ? 'bg-blue-600/30 text-blue-300' :
-                'bg-slate-600/30 text-slate-400'}`}>
-                {CATEGORY_LABELS[selectedLayout.category]}
-              </span>
-              <span className="text-xs text-slate-500 italic">{selectedLayout.name} · {aspectRatio}</span>
-            </div>
-          </div>
-
-          <div className="w-full rounded-xl overflow-hidden shadow-2xl ring-1 ring-slate-700 relative"
-            style={{ aspectRatio: `${arW} / ${arH}`, background: bgColor }}>
-            {selectedLayout.cells.map((cell, i) => (
-              <div key={`${selectedLayout.id}-${i}`} style={getCellStyle(cell)}>
-                <CellEditor
-                  cs={cells[i] ?? DEFAULT_CELL()} idx={i}
-                  isDragOver={dragOverCell === i} isSelected={selectedCell === i}
-                  onSelect={setSelectedCell} onUpdate={updateCell}
-                  onUpload={handleUpload} onRemove={handleRemove}
-                  onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-                />
-              </div>
-            ))}
-          </div>
-
-          {/* Progress dots */}
-          <div className="flex items-center gap-2 mt-2">
-            <div className="flex gap-1">
-              {selectedLayout.cells.map((_, i) => (
-                <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${cells[i]?.imageSrc ? (selectedCell === i ? 'bg-indigo-400 w-5' : 'bg-indigo-600 w-4') : 'bg-slate-600 w-2'}`}/>
-              ))}
-            </div>
-            <span className="text-xs text-slate-500">{filledCount} / {selectedLayout.cells.length} foto</span>
-          </div>
-
-          {/* ZOOM CONTROLS DI BAWAH PREVIEW */}
-          <div className={`mt-3 rounded-xl border transition-all duration-200 overflow-hidden ${selCs?.imageSrc ? 'border-indigo-500/50 bg-indigo-950/30' : 'border-slate-700/50 bg-slate-800/30'}`}>
-            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
+          {/* ── STEP 1: UPLOAD FOTO ── */}
+          <div className={`rounded-xl border transition-all ${step === 1 ? 'border-indigo-500/60 bg-indigo-950/20' : 'border-slate-700 bg-slate-800/30'}`}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
               <div className="flex items-center gap-2">
-                <div className={`w-1.5 h-1.5 rounded-full ${selCs?.imageSrc ? 'bg-indigo-400 animate-pulse' : 'bg-slate-600'}`}/>
-                <span className="text-xs font-semibold text-slate-300">
-                  {selectedCell !== null && selCs?.imageSrc ? `Zoom Foto ${selectedCell + 1}` : 'Klik foto untuk zoom & geser'}
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${step > 1 ? 'bg-indigo-500 text-white' : 'bg-indigo-600 text-white'}`}>
+                  {step > 1 ? '✓' : '1'}
                 </span>
+                <span className="text-sm font-semibold text-white">Upload Foto</span>
+                <span className="text-xs text-slate-500">({filledCount}/{staged.length} terisi · maks 6)</span>
               </div>
-              {selCs?.imageSrc && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-indigo-400 font-mono bg-slate-700 px-2 py-0.5 rounded">
-                    {(selCs.scale * 100).toFixed(0)}%
-                  </span>
-                  <button type="button"
-                    onClick={() => updateCell(selectedCell!, { scale: 1, offsetX: 0, offsetY: 0 })}
-                    className="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded bg-slate-700/50 hover:bg-slate-700 transition-colors">
-                    ↺ Reset
-                  </button>
-                </div>
+              {staged.length < 6 && (
+                <button type="button" onClick={addSlot}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors">
+                  + Tambah slot
+                </button>
               )}
             </div>
-            <div className="px-3 py-3">
-              {selCs?.imageSrc ? (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <button type="button"
-                      onClick={() => handleScaleChange(selectedCell!, Math.max(0.3, selCs.scale - 0.1))}
-                      className="w-10 h-10 flex-shrink-0 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white rounded-xl flex items-center justify-center text-xl font-bold transition-colors select-none touch-manipulation">
-                      −
-                    </button>
-                    <input
-                      type="range" min={30} max={300} step={1}
-                      value={Math.round(selCs.scale * 100)}
-                      onChange={e => handleScaleChange(selectedCell!, Number(e.target.value) / 100)}
-                      className="flex-1 h-3 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"
-                    />
-                    <button type="button"
-                      onClick={() => handleScaleChange(selectedCell!, Math.min(3, selCs.scale + 0.1))}
-                      className="w-10 h-10 flex-shrink-0 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white rounded-xl flex items-center justify-center text-xl font-bold transition-colors select-none touch-manipulation">
-                      +
-                    </button>
-                  </div>
-                  <div className="flex justify-between text-[10px] text-slate-500 px-12">
-                    <span>Kecil</span>
-                    <span>✋ Drag foto untuk geser</span>
-                    <span>Zoom</span>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500 text-center py-1">
-                  Upload &amp; klik foto di preview, lalu zoom di sini
+            <div className="p-3">
+              <div className="grid grid-cols-3 gap-2">
+                {staged.map((photo, i) => {
+                  const isOver = dragOverStaged === i;
+                  return (
+                    <div key={i} className="relative aspect-square">
+                      <div
+                        className={`w-full h-full rounded-lg overflow-hidden border-2 border-dashed transition-all ${
+                          photo ? 'border-transparent' : isOver ? 'border-indigo-400 bg-slate-700' : 'border-slate-600 bg-slate-800/50 hover:border-slate-500'
+                        }`}
+                        onDragOver={e => { e.preventDefault(); setDragOverStaged(i); }}
+                        onDragLeave={() => setDragOverStaged(null)}
+                        onDrop={e => { e.preventDefault(); setDragOverStaged(null); const f = e.dataTransfer.files[0]; if (f) uploadToStaged(i, f); }}
+                      >
+                        {photo ? (
+                          <>
+                            <img src={photo.imageSrc} className="w-full h-full object-cover" alt={`Foto ${i+1}`}/>
+                            <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                              <label className="cursor-pointer p-1 bg-slate-700 hover:bg-slate-600 rounded text-[10px] text-white">
+                                Ganti
+                                <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadToStaged(i, e.target.files[0]); e.target.value=''; }}/>
+                              </label>
+                              <button type="button" onClick={() => removeSlot(i)} className="p-1 bg-red-600/80 hover:bg-red-600 rounded text-[10px] text-white">Hapus</button>
+                            </div>
+                          </>
+                        ) : (
+                          <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
+                            <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadToStaged(i, e.target.files[0]); e.target.value=''; }}/>
+                            <svg className="w-5 h-5 text-slate-500 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4"/>
+                            </svg>
+                            <span className="text-[9px] text-slate-500">Foto {i+1}</span>
+                          </label>
+                        )}
+                      </div>
+                      {/* Nomor badge */}
+                      <span className="absolute top-1 left-1 w-4 h-4 bg-black/60 text-white text-[8px] font-bold rounded-full flex items-center justify-center pointer-events-none">{i+1}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {filledCount === 0 && (
+                <p className="text-[10px] text-slate-500 text-center mt-2">Upload foto dulu — layout akan muncul otomatis sesuai jumlah foto</p>
+              )}
+              {filledCount > 0 && !selectedLayout && (
+                <p className="text-[10px] text-indigo-400 text-center mt-2 animate-pulse">
+                  ✓ {filledCount} foto siap — pilih layout di bawah
                 </p>
               )}
             </div>
           </div>
 
-          <div className="mt-2 text-[10px] text-slate-600 text-center">
-            Layout diagonal/gelombang: ubah warna background untuk efek pemisah berbeda
-          </div>
+          {/* ── STEP 2: PILIH LAYOUT ── */}
+          {filledCount > 0 && (
+            <div className={`rounded-xl border transition-all ${!selectedLayout ? 'border-indigo-500/60 bg-indigo-950/20' : 'border-slate-700 bg-slate-800/30'}`}>
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700/50">
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${selectedLayout ? 'bg-indigo-500 text-white' : 'bg-indigo-600 text-white'}`}>
+                  {selectedLayout ? '✓' : '2'}
+                </span>
+                <span className="text-sm font-semibold text-white">Pilih Layout</span>
+                <span className="text-xs text-slate-400 bg-indigo-600/20 px-2 py-0.5 rounded-full">
+                  {matchingLayouts.length} layout untuk {filledCount} foto
+                </span>
+              </div>
+              <div className="p-3 space-y-3">
+                {/* Filter bentuk */}
+                <div className="flex gap-1.5 flex-wrap">
+                  <button type="button" onClick={() => setFilterCat(null)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${filterCat === null ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>Semua</button>
+                  {categories.map(cat => {
+                    const hasAny = COLLAGE_LAYOUTS.some(l => l.photoCount === filledCount && l.category === cat);
+                    if (!hasAny) return null;
+                    return (
+                      <button key={cat} type="button" onClick={() => setFilterCat(cat === filterCat ? null : cat)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${filterCat === cat ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>
+                        {CATEGORY_LABELS[cat]}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {matchingLayouts.length === 0 ? (
+                  <p className="text-xs text-slate-500 text-center py-4">Tidak ada layout untuk {filledCount} foto dengan filter ini</p>
+                ) : (
+                  <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-56 overflow-y-auto pr-1">
+                    {matchingLayouts.map(layout => {
+                      const isActive = selectedLayout?.id === layout.id;
+                      const isShaped = layout.cells.some(c => c.clip);
+                      return (
+                        <button key={layout.id} type="button" onClick={() => handleSelectLayout(layout)} title={layout.name}
+                          className={`group rounded-lg overflow-hidden transition-all ${isActive ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-slate-800 scale-105' : 'ring-1 ring-slate-600 hover:ring-indigo-400'}`}>
+                          <div className={`aspect-square relative overflow-hidden ${isShaped ? 'bg-slate-950' : 'bg-slate-900'}`}>
+                            {layout.cells.map((cell, ci) => (
+                              <div key={ci}
+                                className={`absolute ${isActive ? 'bg-indigo-500/80' : 'bg-slate-500/70 group-hover:bg-indigo-400/60'}`}
+                                style={cell.clip
+                                  ? { left:0, top:0, width:'100%', height:'100%', clipPath: toClip(cell.clip), outline:'0.5px solid rgba(15,23,42,0.8)', outlineOffset:'-0.5px' }
+                                  : { left:`${cell.x}%`, top:`${cell.y}%`, width:`${cell.w}%`, height:`${cell.h}%`, border:'1px solid rgba(15,23,42,0.8)' }
+                                }
+                              />
+                            ))}
+                          </div>
+                          <div className="bg-slate-800 px-1 py-0.5">
+                            <p className="text-[8px] text-slate-400 truncate text-center">{layout.name}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 3: PENGATURAN ── */}
+          {selectedLayout && (
+            <div className="rounded-xl border border-slate-700 bg-slate-800/30 space-y-0 overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700/50">
+                <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-indigo-600 text-white">3</span>
+                <span className="text-sm font-semibold text-white">Pengaturan</span>
+              </div>
+              <div className="p-4 space-y-4">
+
+                {/* Aspek Rasio */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">Aspek Rasio Output</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {ASPECT_OPTIONS.map(opt => (
+                      <button key={opt.value} type="button" onClick={() => setAspectRatio(opt.value)}
+                        className={`py-1.5 px-1 rounded-lg text-center transition-all border ${aspectRatio === opt.value ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:border-indigo-500/50'}`}>
+                        <div className="text-xs font-bold">{opt.label}</div>
+                        <div className="text-[9px] opacity-70">{opt.sub}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Gap */}
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Jarak Antar Foto</label>
+                    <span className="text-xs font-bold text-indigo-400 bg-slate-700 px-2 py-0.5 rounded">{gap}px</span>
+                  </div>
+                  <input type="range" min={0} max={24} value={gap} onChange={e => setGap(Number(e.target.value))}
+                    className="w-full h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
+                  {selectedLayout.cells.some(c => c.clip) && (
+                    <p className="text-[10px] text-amber-400/60 mt-1">⚡ Jarak tidak berlaku untuk layout berbentuk</p>
+                  )}
+                </div>
+
+                {/* Background */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Warna Background</label>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <label className="w-8 h-8 rounded-lg cursor-pointer border-2 border-slate-600 hover:border-indigo-500 overflow-hidden flex-shrink-0" style={{ background: bgColor }}>
+                      <input type="color" value={bgColor} onChange={e => setBgColor(e.target.value)} className="opacity-0 w-0 h-0" />
+                    </label>
+                    <input type="text" value={bgColor} onChange={e => setBgColor(e.target.value)}
+                      className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-xs font-mono focus:outline-none focus:border-indigo-500"/>
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {BG_PRESETS.map(c => (
+                      <button key={c} type="button" onClick={() => setBgColor(c)}
+                        className={`w-6 h-6 rounded-full border-2 transition-all hover:scale-110 ${bgColor === c ? 'border-white scale-110' : 'border-slate-600'}`}
+                        style={{ background: c }}/>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* Export */}
+          {selectedLayout && (
+            <div className="pt-1">
+              <button type="button" onClick={handleExport} disabled={isExporting}
+                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg hover:from-indigo-500 hover:to-purple-500 transition-all disabled:opacity-50 flex items-center justify-center gap-2.5">
+                {isExporting
+                  ? <><svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Mengekspor...</>
+                  : <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Download Kolase (PNG)</>
+                }
+              </button>
+              <p className="text-center text-xs text-slate-500 mt-1.5">Output 1080px × aspek rasio terpilih</p>
+            </div>
+          )}
+        </div>
+
+        {/* ═══ PANEL KANAN: Preview ═══ */}
+        <div>
+          {!selectedLayout ? (
+            /* Placeholder saat belum pilih layout */
+            <div className="w-full rounded-xl overflow-hidden ring-1 ring-slate-700 bg-slate-800/50 flex flex-col items-center justify-center py-16 gap-4 text-center px-6"
+              style={{ minHeight: '280px' }}>
+              {filledCount === 0 ? (
+                <>
+                  <svg className="w-12 h-12 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                  </svg>
+                  <div>
+                    <p className="text-slate-400 font-semibold">Upload foto dulu</p>
+                    <p className="text-xs text-slate-600 mt-1">Layout akan muncul otomatis sesuai jumlah foto</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-4xl">🖼️</div>
+                  <div>
+                    <p className="text-slate-400 font-semibold">{filledCount} foto siap</p>
+                    <p className="text-xs text-slate-600 mt-1">Pilih layout dari panel kiri untuk melihat preview</p>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Preview Kolase</span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${
+                    selectedLayout.category === 'diagonal'  ? 'bg-amber-600/30 text-amber-300' :
+                    selectedLayout.category === 'chevron'   ? 'bg-green-600/30 text-green-300' :
+                    selectedLayout.category === 'gelombang' ? 'bg-blue-600/30 text-blue-300' :
+                    'bg-slate-600/30 text-slate-400'}`}>
+                    {CATEGORY_LABELS[selectedLayout.category]}
+                  </span>
+                  <span className="text-xs text-slate-500 italic">{selectedLayout.name}</span>
+                  <button type="button" onClick={() => { setSelectedLayout(null); setCells([]); setSelectedCell(null); }}
+                    className="text-[10px] text-slate-500 hover:text-red-400 transition-colors">✕ ganti</button>
+                </div>
+              </div>
+
+              <div className="w-full rounded-xl overflow-hidden shadow-2xl ring-1 ring-slate-700 relative"
+                style={{ aspectRatio: `${arW} / ${arH}`, background: bgColor }}>
+                {selectedLayout.cells.map((cell, i) => (
+                  <div key={`${selectedLayout.id}-${i}`} style={getCellStyle(cell)}>
+                    <CellEditor
+                      cs={cells[i] ?? DEFAULT_CELL()} idx={i}
+                      isDragOver={dragOverCell === i} isSelected={selectedCell === i}
+                      onSelect={setSelectedCell} onUpdate={updateCell}
+                      onUpload={(i, f) => uploadToStaged(i, f)} onRemove={handleRemoveCell}
+                      onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Progress dots */}
+              <div className="flex items-center gap-2 mt-2">
+                <div className="flex gap-1">
+                  {selectedLayout.cells.map((_, i) => (
+                    <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${cells[i]?.imageSrc ? (selectedCell === i ? 'bg-indigo-400 w-5' : 'bg-indigo-600 w-4') : 'bg-slate-600 w-2'}`}/>
+                  ))}
+                </div>
+                <span className="text-xs text-slate-500">{cells.filter(c=>c?.imageSrc).length} / {selectedLayout.cells.length} foto</span>
+              </div>
+
+              {/* ZOOM CONTROLS DI BAWAH PREVIEW */}
+              <div className={`mt-3 rounded-xl border transition-all duration-200 overflow-hidden ${selCs?.imageSrc ? 'border-indigo-500/50 bg-indigo-950/30' : 'border-slate-700/50 bg-slate-800/30'}`}>
+                <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-1.5 h-1.5 rounded-full ${selCs?.imageSrc ? 'bg-indigo-400 animate-pulse' : 'bg-slate-600'}`}/>
+                    <span className="text-xs font-semibold text-slate-300">
+                      {selectedCell !== null && selCs?.imageSrc ? `Zoom Foto ${selectedCell + 1}` : 'Klik foto untuk zoom & geser'}
+                    </span>
+                  </div>
+                  {selCs?.imageSrc && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-indigo-400 font-mono bg-slate-700 px-2 py-0.5 rounded">
+                        {(selCs.scale * 100).toFixed(0)}%
+                      </span>
+                      <button type="button"
+                        onClick={() => updateCell(selectedCell!, { scale: 1, offsetX: 0, offsetY: 0 })}
+                        className="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded bg-slate-700/50 hover:bg-slate-700 transition-colors">
+                        ↺ Reset
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="px-3 py-3">
+                  {selCs?.imageSrc ? (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <button type="button"
+                          onClick={() => handleScaleChange(selectedCell!, Math.max(0.3, selCs.scale - 0.1))}
+                          className="w-10 h-10 flex-shrink-0 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white rounded-xl flex items-center justify-center text-xl font-bold transition-colors select-none touch-manipulation">
+                          −
+                        </button>
+                        <input type="range" min={30} max={300} step={1}
+                          value={Math.round(selCs.scale * 100)}
+                          onChange={e => handleScaleChange(selectedCell!, Number(e.target.value) / 100)}
+                          className="flex-1 h-3 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
+                        <button type="button"
+                          onClick={() => handleScaleChange(selectedCell!, Math.min(3, selCs.scale + 0.1))}
+                          className="w-10 h-10 flex-shrink-0 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white rounded-xl flex items-center justify-center text-xl font-bold transition-colors select-none touch-manipulation">
+                          +
+                        </button>
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-500 px-12">
+                        <span>Kecil</span>
+                        <span>✋ Drag foto untuk geser</span>
+                        <span>Zoom</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 text-center py-1">Klik foto di preview, lalu zoom di sini</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-2 text-[10px] text-slate-600 text-center">
+                Layout diagonal/gelombang: ubah warna background untuk efek pemisah berbeda
+              </div>
+            </>
+          )}
         </div>
 
       </div>
