@@ -419,21 +419,33 @@ interface TextFormProps {
 }
 
 const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
-  // ── UNCONTROLLED INPUT ──────────────────────────────────────────────────────
-  // Solusi nyata bug "tidak bisa ketik":
-  // Controlled input (value={state}) memaksa React menimpa nilai DOM setiap
-  // re-render, yang menyebabkan cursor reset / karakter hilang di beberapa
-  // environment. Uncontrolled input (ref only, tanpa value prop) menyerahkan
-  // kendali sepenuhnya ke browser — React tidak pernah menyentuh DOM input.
+  // ── ZERO-RERENDER TYPING ────────────────────────────────────────────────────
+  // Masalah inti: setiap setState saat mengetik memicu React re-render yang
+  // di mobile bisa menutup keyboard virtual / reset fokus input.
+  //
+  // Solusi: TIDAK ADA state update sama sekali saat mengetik.
+  //   • Input: uncontrolled (tanpa prop `value`), nilai dibaca via inputRef
+  //   • Preview span: diupdate langsung via previewRef.current.textContent
+  //     → murni DOM mutation, React tidak tahu, tidak ada re-render
+  //   • Style preview (font/color/size/bold): state boleh berubah karena
+  //     itu hanya terjadi saat klik tombol, bukan saat mengetik
   // ───────────────────────────────────────────────────────────────────────────
-  const inputRef              = useRef<HTMLInputElement>(null);
-  const [preview, setPreview] = useState('');   // hanya untuk tampilan live preview
-  const [font, setFont]       = useState('sans');
-  const [color, setColor]     = useState('#ffffff');
-  const [size, setSize]       = useState(40);
-  const [bold, setBold]       = useState(false);
-  const [italic, setItalic]   = useState(false);
-  const [shadow, setShadow]   = useState(true);
+  const inputRef      = useRef<HTMLInputElement>(null);
+  const previewRef    = useRef<HTMLSpanElement>(null);
+
+  const [font,   setFont]   = useState('sans');
+  const [color,  setColor]  = useState('#ffffff');
+  const [size,   setSize]   = useState(40);
+  const [bold,   setBold]   = useState(false);
+  const [italic, setItalic] = useState(false);
+  const [shadow, setShadow] = useState(true);
+
+  // Update teks preview langsung ke DOM — tidak lewat React state
+  const syncPreview = (val: string) => {
+    if (previewRef.current) {
+      previewRef.current.textContent = val || 'Preview Teks';
+    }
+  };
 
   const handleAdd = () => {
     const t = (inputRef.current?.value ?? '').trim();
@@ -443,14 +455,11 @@ const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
       text: t, font, color, size, bold, italic, shadow,
       x: 50, y: 50, rotation: 0,
     });
-    // Reset input DOM langsung + hapus preview state
     if (inputRef.current) inputRef.current.value = '';
-    setPreview('');
+    syncPreview('');
   };
 
   return (
-    // stopPropagation di container mencegah event mouse/touch naik ke parent
-    // (preview area punya onClick={() => setSelectedLayer(null)})
     <div
       className="p-3 space-y-3"
       onMouseDown={e => e.stopPropagation()}
@@ -462,11 +471,14 @@ const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
         <input
           ref={inputRef}
           type="text"
-          // Tidak ada prop `value` → uncontrolled, browser yang pegang nilai
-          onChange={e => setPreview(e.target.value)}   // hanya update preview display
+          // onInput bukan onChange — lebih rendah level, lebih cepat
+          // Tidak ada setState → tidak ada re-render → keyboard tidak hilang
+          onInput={e => syncPreview((e.target as HTMLInputElement).value)}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAdd(); } }}
           placeholder="Ketik teks..."
           autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
           spellCheck={false}
           className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
         />
@@ -515,20 +527,26 @@ const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
         </div>
       </div>
 
+      {/* Preview — span diupdate langsung via ref, bukan via React state */}
       <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[44px] flex items-center justify-center overflow-hidden">
-        <span style={{
-          fontFamily: FONTS.find(f => f.id === font)?.css,
-          color, fontSize: `${Math.min(size, 36)}px`,
-          fontWeight: bold ? 'bold' : 'normal',
-          fontStyle: italic ? 'italic' : 'normal',
-          textShadow: shadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
-        }}>
-          {preview || 'Preview Teks'}
+        <span
+          ref={previewRef}
+          style={{
+            fontFamily: FONTS.find(f => f.id === font)?.css,
+            color,
+            fontSize: `${Math.min(size, 36)}px`,
+            fontWeight: bold ? 'bold' : 'normal',
+            fontStyle: italic ? 'italic' : 'normal',
+            textShadow: shadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
+          }}
+        >
+          Preview Teks
         </span>
       </div>
 
-      <button type="button" onClick={handleAdd} disabled={!preview.trim()}
-        className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors">
+      {/* Tombol: tidak disabled (cek dilakukan di handleAdd) */}
+      <button type="button" onClick={handleAdd}
+        className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors">
         + Tambah ke Kolase
       </button>
     </div>
