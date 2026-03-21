@@ -268,8 +268,9 @@ const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
           rows={2}
           placeholder="Ketik teks di sini..."
           onInput={syncPreview}
-          style={{ resize:'none', touchAction:'manipulation' }}
-          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+          onMouseDown={e => e.stopPropagation()}
+          style={{ resize:'none', touchAction:'manipulation', color:'#f1f5f9', backgroundColor:'#334155', caretColor:'#f1f5f9', WebkitTextFillColor:'#f1f5f9' }}
+          className="w-full border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
         />
       </div>
       <div>
@@ -375,7 +376,10 @@ const CollageEditor: React.FC = () => {
   },[staged,selectedLayout,filledCount]);
 
   useEffect(()=>{
-    const h=(e:MouseEvent)=>{if(!(e.target as HTMLElement).closest('[data-collage-area]'))setSelectedCell(null);};
+    const h=(e:MouseEvent)=>{
+      if(!(e.target as HTMLElement).closest('[data-collage-area="true"]'))
+        setSelectedCell(null);
+    };
     window.addEventListener('mousedown',h);
     return ()=>window.removeEventListener('mousedown',h);
   },[]);
@@ -501,7 +505,7 @@ const CollageEditor: React.FC = () => {
   const step=filledCount===0?1:!selectedLayout?2:3;
 
   return (
-    <div className="space-y-6" data-collage-area>
+    <div className="space-y-6" data-collage-area="true">
 
       {/* STEP INDICATOR */}
       <div className="flex items-center gap-2">
