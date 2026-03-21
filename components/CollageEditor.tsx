@@ -8,7 +8,7 @@ interface CollageCell {
   y: number;
   w: number;
   h: number;
-  clip?: string; // "x1 y1,x2 y2,..." tanpa %, dikonversi ke clipPath saat render
+  clip?: string;
 }
 
 interface CollageLayout {
@@ -28,16 +28,15 @@ interface CellState {
   offsetY: number;
 }
 
-
 // =============================================
-// LAYER TYPES (Teks & Stiker di atas foto)
+// LAYER TYPES
 // =============================================
 interface BaseLayer {
   id: string;
-  x: number;   // % dari canvas width (0-100)
-  y: number;   // % dari canvas height (0-100)
-  size: number; // px font/stiker
-  rotation: number; // derajat
+  x: number;
+  y: number;
+  size: number;
+  rotation: number;
 }
 interface TextLayer extends BaseLayer {
   kind: 'text';
@@ -50,7 +49,7 @@ interface TextLayer extends BaseLayer {
 }
 interface StickerLayer extends BaseLayer {
   kind: 'sticker';
-  symbol: string; // emoji / unicode
+  symbol: string;
 }
 type Layer = TextLayer | StickerLayer;
 
@@ -73,40 +72,29 @@ const STICKERS = [
 
 const TEXT_COLORS = ['#ffffff','#000000','#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#a855f7','#ec4899','#06b6d4'];
 
-// =============================================
-// HELPER: konversi clip string ke CSS clipPath
-// Input:  "0 0,60 0,40 100,0 100"
-// Output: "polygon(0% 0%, 60% 0%, 40% 100%, 0% 100%)"
-// =============================================
 const toClip = (s: string) =>
   `polygon(${s.split(',').map(p => p.trim().split(' ').join('% ') + '%').join(', ')})`;
 
 // =============================================
-// LAYOUTS
+// LAYOUTS (tidak berubah)
 // =============================================
 const COLLAGE_LAYOUTS: CollageLayout[] = [
-
-  // ──────────────── KOTAK ────────────────
-  // 2 foto
   { id:'2_lr_50', name:'50/50 Kiri-Kanan',  category:'kotak', photoCount:2, cells:[{x:0,y:0,w:50,h:100},{x:50,y:0,w:50,h:100}] },
   { id:'2_tb_50', name:'50/50 Atas-Bawah',  category:'kotak', photoCount:2, cells:[{x:0,y:0,w:100,h:50},{x:0,y:50,w:100,h:50}] },
   { id:'2_lr_60', name:'60/40 Kiri-Kanan',  category:'kotak', photoCount:2, cells:[{x:0,y:0,w:60,h:100},{x:60,y:0,w:40,h:100}] },
   { id:'2_lr_70', name:'70/30 Kiri-Kanan',  category:'kotak', photoCount:2, cells:[{x:0,y:0,w:70,h:100},{x:70,y:0,w:30,h:100}] },
   { id:'2_tb_65', name:'65/35 Atas-Bawah',  category:'kotak', photoCount:2, cells:[{x:0,y:0,w:100,h:65},{x:0,y:65,w:100,h:35}] },
-  // 3 foto
   { id:'3_1l_2r', name:'1 Besar Kiri + 2 Kanan',     category:'kotak', photoCount:3, cells:[{x:0,y:0,w:55,h:100},{x:55,y:0,w:45,h:50},{x:55,y:50,w:45,h:50}] },
   { id:'3_2l_1r', name:'2 Kiri + 1 Besar Kanan',     category:'kotak', photoCount:3, cells:[{x:0,y:0,w:45,h:50},{x:0,y:50,w:45,h:50},{x:45,y:0,w:55,h:100}] },
   { id:'3_1t_2b', name:'1 Besar Atas + 2 Bawah',     category:'kotak', photoCount:3, cells:[{x:0,y:0,w:100,h:55},{x:0,y:55,w:50,h:45},{x:50,y:55,w:50,h:45}] },
   { id:'3_2t_1b', name:'2 Atas + 1 Besar Bawah',     category:'kotak', photoCount:3, cells:[{x:0,y:0,w:50,h:45},{x:50,y:0,w:50,h:45},{x:0,y:45,w:100,h:55}] },
   { id:'3_asym',  name:'1 Kiri + 2 Kanan Asimetris', category:'kotak', photoCount:3, cells:[{x:0,y:0,w:50,h:100},{x:50,y:0,w:50,h:40},{x:50,y:40,w:50,h:60}] },
-  // 4 foto
   { id:'4_grid',  name:'2x2 Grid Sama Rata',      category:'kotak', photoCount:4, cells:[{x:0,y:0,w:50,h:50},{x:50,y:0,w:50,h:50},{x:0,y:50,w:50,h:50},{x:50,y:50,w:50,h:50}] },
   { id:'4_1l_3r', name:'1 Besar Kiri + 3 Kanan',  category:'kotak', photoCount:4, cells:[{x:0,y:0,w:55,h:100},{x:55,y:0,w:45,h:33.34},{x:55,y:33.34,w:45,h:33.33},{x:55,y:66.67,w:45,h:33.33}] },
   { id:'4_3l_1r', name:'3 Kiri + 1 Besar Kanan',  category:'kotak', photoCount:4, cells:[{x:0,y:0,w:45,h:33.34},{x:0,y:33.34,w:45,h:33.33},{x:0,y:66.67,w:45,h:33.33},{x:45,y:0,w:55,h:100}] },
   { id:'4_1t_3b', name:'1 Besar Atas + 3 Bawah',  category:'kotak', photoCount:4, cells:[{x:0,y:0,w:100,h:55},{x:0,y:55,w:33.34,h:45},{x:33.34,y:55,w:33.33,h:45},{x:66.67,y:55,w:33.33,h:45}] },
   { id:'4_3t_1b', name:'3 Atas + 1 Besar Bawah',  category:'kotak', photoCount:4, cells:[{x:0,y:0,w:33.34,h:45},{x:33.34,y:0,w:33.33,h:45},{x:66.67,y:0,w:33.33,h:45},{x:0,y:45,w:100,h:55}] },
   { id:'4_lg_sm', name:'1 Besar + 3 Strip Bawah',  category:'kotak', photoCount:4, cells:[{x:0,y:0,w:100,h:65},{x:0,y:65,w:33.34,h:35},{x:33.34,y:65,w:33.33,h:35},{x:66.67,y:65,w:33.33,h:35}] },
-  // 5 foto
   { id:'5_1tl_4',   name:'1 Pojok Besar + 4 Kecil', category:'kotak', photoCount:5, cells:[{x:0,y:0,w:60,h:60},{x:60,y:0,w:40,h:30},{x:60,y:30,w:40,h:30},{x:0,y:60,w:50,h:40},{x:50,y:60,w:50,h:40}] },
   { id:'5_2t_3b',   name:'2 Atas + 3 Bawah',        category:'kotak', photoCount:5, cells:[{x:0,y:0,w:50,h:50},{x:50,y:0,w:50,h:50},{x:0,y:50,w:33.34,h:50},{x:33.34,y:50,w:33.33,h:50},{x:66.67,y:50,w:33.33,h:50}] },
   { id:'5_3t_2b',   name:'3 Atas + 2 Bawah',        category:'kotak', photoCount:5, cells:[{x:0,y:0,w:33.34,h:50},{x:33.34,y:0,w:33.33,h:50},{x:66.67,y:0,w:33.33,h:50},{x:0,y:50,w:50,h:50},{x:50,y:50,w:50,h:50}] },
@@ -114,12 +102,9 @@ const COLLAGE_LAYOUTS: CollageLayout[] = [
   { id:'5_4l_1r',   name:'4 Kiri + 1 Besar Kanan',  category:'kotak', photoCount:5, cells:[{x:0,y:0,w:50,h:25},{x:0,y:25,w:50,h:25},{x:0,y:50,w:50,h:25},{x:0,y:75,w:50,h:25},{x:50,y:0,w:50,h:100}] },
   { id:'5_cross',   name:'Pola Plus / Cross',        category:'kotak', photoCount:5, cells:[{x:33.33,y:0,w:33.34,h:33.33},{x:0,y:33.33,w:33.33,h:33.34},{x:33.33,y:33.33,w:33.34,h:33.34},{x:66.67,y:33.33,w:33.33,h:33.34},{x:33.33,y:66.67,w:33.34,h:33.33}] },
   { id:'5_1c_4cor', name:'1 Tengah + 4 Sudut',      category:'kotak', photoCount:5, cells:[{x:25,y:25,w:50,h:50},{x:0,y:0,w:25,h:25},{x:75,y:0,w:25,h:25},{x:0,y:75,w:25,h:25},{x:75,y:75,w:25,h:25}] },
-  // 6 foto
   { id:'6_2x3',  name:'6 - Grid 2x3',          category:'kotak', photoCount:6, cells:[{x:0,y:0,w:33.34,h:50},{x:33.34,y:0,w:33.33,h:50},{x:66.67,y:0,w:33.33,h:50},{x:0,y:50,w:33.34,h:50},{x:33.34,y:50,w:33.33,h:50},{x:66.67,y:50,w:33.33,h:50}] },
   { id:'6_3x2',  name:'6 - Grid 3x2',          category:'kotak', photoCount:6, cells:[{x:0,y:0,w:50,h:33.34},{x:50,y:0,w:50,h:33.34},{x:0,y:33.34,w:50,h:33.33},{x:50,y:33.34,w:50,h:33.33},{x:0,y:66.67,w:50,h:33.33},{x:50,y:66.67,w:50,h:33.33}] },
   { id:'6_1l5r', name:'6 - 1 Besar + 5 Strip',  category:'kotak', photoCount:6, cells:[{x:0,y:0,w:55,h:100},{x:55,y:0,w:45,h:20},{x:55,y:20,w:45,h:20},{x:55,y:40,w:45,h:20},{x:55,y:60,w:45,h:20},{x:55,y:80,w:45,h:20}] },
-
-  // ──────────────── DIAGONAL ────────────────
   { id:'d2_slash', name:'2 Miring /',         category:'diagonal', photoCount:2, cells:[
     { x:0,y:0,w:100,h:100, clip:'0 0,60 0,40 100,0 100' },
     { x:0,y:0,w:100,h:100, clip:'60 0,100 0,100 100,40 100' },
@@ -154,8 +139,6 @@ const COLLAGE_LAYOUTS: CollageLayout[] = [
     { x:0,y:0,w:100,h:100, clip:'0 100,100 0,100 55,45 100' },
     { x:0,y:0,w:100,h:100, clip:'0 100,45 100,100 55,100 100' },
   ]},
-
-  // ──────────────── CHEVRON ────────────────
   { id:'c2_right', name:'2 Panah →',    category:'chevron', photoCount:2, cells:[
     { x:0,y:0,w:100,h:100, clip:'0 0,55 0,78 50,55 100,0 100' },
     { x:0,y:0,w:100,h:100, clip:'55 0,100 0,100 100,55 100,78 50' },
@@ -184,8 +167,6 @@ const COLLAGE_LAYOUTS: CollageLayout[] = [
     { x:0,y:0,w:100,h:100, clip:'55 0,78 0,90 50,78 100,55 100,67 50' },
     { x:0,y:0,w:100,h:100, clip:'78 0,100 0,100 100,78 100,90 50' },
   ]},
-
-  // ──────────────── GELOMBANG ────────────────
   { id:'g2_vert',  name:'2 Gelombang |', category:'gelombang', photoCount:2, cells:[
     { x:0,y:0,w:100,h:100, clip:'0 0,46 0,50 8,55 17,57 25,55 33,50 42,45 50,43 58,46 67,52 75,54 83,52 92,48 100,0 100' },
     { x:0,y:0,w:100,h:100, clip:'46 0,100 0,100 100,48 100,52 92,54 83,52 75,46 67,43 58,45 50,50 42,55 33,57 25,55 17,50 8' },
@@ -227,9 +208,6 @@ const DEFAULT_CELL = (): CellState => ({
   imageSrc: null, imgNaturalW: 0, imgNaturalH: 0, scale: 1, offsetX: 0, offsetY: 0,
 });
 
-// =============================================
-// HELPER: batas pan bebas
-// =============================================
 const calcMaxOffset = (
   imgW: number, imgH: number, cellW: number, cellH: number, scale: number
 ): { maxOffX: number; maxOffY: number } => {
@@ -246,7 +224,7 @@ const calcMaxOffset = (
 };
 
 // =============================================
-// CELL EDITOR — tidak berubah dari versi awal
+// CELL EDITOR
 // =============================================
 interface CellEditorProps {
   cs: CellState; idx: number;
@@ -294,7 +272,6 @@ const CellEditor: React.FC<CellEditorProps> = ({
     window.addEventListener('mouseup', onUp);
   };
 
-  // ── State untuk touch (1 jari = drag, 2 jari = pinch zoom) ──
   const touchStart   = useRef({ x: 0, y: 0, offX: 0, offY: 0 });
   const pinchStart   = useRef({ dist: 0, scale: 1, midX: 0, midY: 0, offX: 0, offY: 0 });
   const isPinching   = useRef(false);
@@ -310,12 +287,10 @@ const CellEditor: React.FC<CellEditorProps> = ({
     if (!cs.imageSrc) return;
     e.preventDefault();
     onSelect(idx);
-
     if (e.touches.length === 2) {
-      // Pinch start
-      isPinching.current  = true;
-      isDragging.current  = false;
-      pinchStart.current  = {
+      isPinching.current = true;
+      isDragging.current = false;
+      pinchStart.current = {
         dist:  getTouchDist(e.touches),
         scale: cs.scale,
         midX:  getTouchMid(e.touches).x,
@@ -324,7 +299,6 @@ const CellEditor: React.FC<CellEditorProps> = ({
         offY:  cs.offsetY,
       };
     } else if (e.touches.length === 1 && !isPinching.current) {
-      // 1 jari drag
       isDragging.current = true;
       touchStart.current = {
         x: e.touches[0].clientX, y: e.touches[0].clientY,
@@ -338,9 +312,7 @@ const CellEditor: React.FC<CellEditorProps> = ({
     e.preventDefault();
     const rect  = containerRef.current.getBoundingClientRect();
     const cellW = rect.width, cellH = rect.height;
-
     if (e.touches.length === 2 && isPinching.current) {
-      // ── Pinch zoom ──
       const newDist  = getTouchDist(e.touches);
       const ratio    = newDist / pinchStart.current.dist;
       const newScale = Math.max(0.3, Math.min(3, pinchStart.current.scale * ratio));
@@ -351,7 +323,6 @@ const CellEditor: React.FC<CellEditorProps> = ({
         offsetY: Math.max(-maxOffY, Math.min(maxOffY, pinchStart.current.offY)),
       });
     } else if (e.touches.length === 1 && isDragging.current && !isPinching.current) {
-      // ── 1 jari drag ──
       const s = cs.scale;
       const { maxOffX, maxOffY } = calcMaxOffset(cs.imgNaturalW, cs.imgNaturalH, cellW, cellH, s);
       onUpdate(idx, {
@@ -364,7 +335,6 @@ const CellEditor: React.FC<CellEditorProps> = ({
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (e.touches.length < 2) isPinching.current = false;
     if (e.touches.length === 0) isDragging.current = false;
-    // Jika dari pinch kembali ke 1 jari, reset drag start dari posisi sekarang
     if (e.touches.length === 1 && !isPinching.current) {
       isDragging.current = true;
       touchStart.current = {
@@ -438,13 +408,17 @@ const CellEditor: React.FC<CellEditorProps> = ({
 };
 
 // =============================================
-// TEXT FORM — sub-component terpisah agar state-nya
-// tidak terpengaruh re-render CollageEditor
+// TEXT FORM
+// =============================================
+// FIX: Dibungkus React.memo agar tidak re-mount saat parent re-render.
+// FIX: Semua event input pakai stopPropagation() agar tidak ada parent yang
+//      mencegat event keyboard/pointer, yang dulu menyebabkan tidak bisa ketik.
 // =============================================
 interface TextFormProps {
   onAdd: (layer: TextLayer) => void;
 }
-const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
+
+const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
   const [text, setText]     = useState('');
   const [font, setFont]     = useState('sans');
   const [color, setColor]   = useState('#ffffff');
@@ -468,12 +442,29 @@ const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
     <div className="p-3 space-y-3">
       <div>
         <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
+        {/*
+          FIX TYPING BUG:
+          - stopPropagation pada onMouseDown, onTouchStart, onChange, onKeyDown
+            mencegah event naik ke parent yang bisa memicu re-render atau
+            mengambil alih fokus input.
+          - autoComplete/autoCorrect/spellCheck dimatikan supaya browser tidak
+            memunculkan UI yang mengganggu fokus di mobile.
+        */}
         <input
           type="text"
           value={text}
-          onChange={e => setText(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }}}
+          onChange={e => { e.stopPropagation(); setText(e.target.value); }}
+          onKeyDown={e => {
+            e.stopPropagation();
+            if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
+          }}
+          onMouseDown={e => e.stopPropagation()}
+          onTouchStart={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
           placeholder="Ketik teks..."
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
         />
       </div>
@@ -521,7 +512,6 @@ const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
         </div>
       </div>
 
-      {/* Preview */}
       <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[44px] flex items-center justify-center overflow-hidden">
         <span style={{
           fontFamily: FONTS.find(f => f.id === font)?.css,
@@ -540,13 +530,11 @@ const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
       </button>
     </div>
   );
-};
+});
 
 // =============================================
 // MAIN COMPONENT
 // =============================================
-
-// Tipe foto yang di-staging (bebas dari layout)
 interface StagedPhoto {
   imageSrc: string;
   imgNaturalW: number;
@@ -554,7 +542,6 @@ interface StagedPhoto {
 }
 
 const CollageEditor: React.FC = () => {
-  // ── Staging: foto dulu, layout menyesuaikan ──
   const [staged, setStaged]             = useState<(StagedPhoto | null)[]>([null, null]);
   const [selectedLayout, setSelectedLayout] = useState<CollageLayout | null>(null);
   const [cells, setCells]               = useState<CellState[]>([]);
@@ -568,28 +555,21 @@ const CollageEditor: React.FC = () => {
   const [dragOverCell, setDragOverCell] = useState<number | null>(null);
   const [selectedCell, setSelectedCell] = useState<number | null>(null);
 
-  // ── Layers: teks & stiker ──
   const [layers, setLayers]             = useState<Layer[]>([]);
   const [selectedLayer, setSelectedLayer] = useState<string | null>(null);
   const [activeTab, setActiveTab]       = useState<'foto'|'teks'|'stiker'>('foto');
-  // Form teks baru — pakai state biasa, ref untuk baca nilai terkini di addTextLayer
-  const [newText, setNewText]           = useState('');
-  const [newFont, setNewFont]           = useState('sans');
-  const [newColor, setNewColor]         = useState('#ffffff');
-  const [newSize, setNewSize]           = useState(40);
-  const [newBold, setNewBold]           = useState(false);
-  const [newItalic, setNewItalic]       = useState(false);
-  const [newShadow, setNewShadow]       = useState(true);
   const [showStickerGroup, setShowStickerGroup] = useState('Panah');
-  // Ref untuk selalu baca nilai terkini tanpa stale closure
-  const textFormRef = useRef({ text:'', font:'sans', color:'#ffffff', size:40, bold:false, italic:false, shadow:true });
-  const previewRef = useRef<HTMLDivElement>(null);
-  const inputRef   = useRef<HTMLInputElement>(null);  // uncontrolled input
 
-  // Jumlah foto yang sudah diisi di staging
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  // Ref untuk drag layer (1 jari)
+  const layerDrag = useRef<{ id:string; startX:number; startY:number; origX:number; origY:number } | null>(null);
+
+  // FIX PINCH: Ref baru untuk melacak state pinch-to-resize layer
+  const layerPinch = useRef<{ id: string; startDist: number; startSize: number } | null>(null);
+
   const filledCount = staged.filter(s => s !== null).length;
 
-  // Layout yang cocok = photoCount === filledCount (hanya tampil jika ada foto)
   const matchingLayouts = filledCount > 0
     ? COLLAGE_LAYOUTS.filter(l =>
         l.photoCount === filledCount &&
@@ -597,7 +577,6 @@ const CollageEditor: React.FC = () => {
       )
     : [];
 
-  // Saat layout dipilih: distribusi foto staging ke cells
   const handleSelectLayout = useCallback((layout: CollageLayout) => {
     setSelectedLayout(layout);
     setSelectedCell(null);
@@ -609,21 +588,17 @@ const CollageEditor: React.FC = () => {
     setCells(newCells);
   }, [staged]);
 
-  // Saat foto staging berubah & layout sudah dipilih: sync cells
   useEffect(() => {
     if (!selectedLayout) return;
-    // Jika jumlah foto staging tidak cocok lagi dengan layout, reset layout
     if (filledCount !== selectedLayout.photoCount) {
       setSelectedLayout(null);
       setCells([]);
       return;
     }
-    // Update cells dari staged terbaru, pertahankan scale/offset yang sudah diatur
     setCells(prev => selectedLayout.cells.map((_, i) => {
       const s = staged[i];
       const existing = prev[i];
       if (s) {
-        // Jika gambar sama, pertahankan posisi; jika beda, reset
         if (existing?.imageSrc === s.imageSrc) return existing;
         return { imageSrc: s.imageSrc, imgNaturalW: s.imgNaturalW, imgNaturalH: s.imgNaturalH, scale: 1, offsetX: 0, offsetY: 0 };
       }
@@ -640,7 +615,6 @@ const CollageEditor: React.FC = () => {
     return () => window.removeEventListener('mousedown', handler);
   }, []);
 
-  // Upload satu file ke slot tertentu
   const uploadToStaged = useCallback((i: number, file: File) => {
     if (!file.type.startsWith('image/')) return;
     const reader = new FileReader();
@@ -659,26 +633,20 @@ const CollageEditor: React.FC = () => {
     reader.readAsDataURL(file);
   }, []);
 
-  // Upload banyak file sekaligus (multi-select dari galeri HP)
   const uploadMultiple = useCallback((files: FileList) => {
     const imgs = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, 6);
-    imgs.forEach((file, fi) => {
+    imgs.forEach((file) => {
       const reader = new FileReader();
       reader.onload = e => {
         const src = e.target?.result as string;
         const img = new Image();
         img.onload = () => {
           setStaged(prev => {
-            // Cari slot kosong mulai dari fi, atau expand array
             const next = [...prev];
-            // Isi slot kosong secara berurutan
-            let slotIdx = -1;
-            for (let k = 0; k < next.length; k++) {
-              if (!next[k]) { slotIdx = k; break; }
-            }
+            let slotIdx = next.findIndex(s => !s);
             if (slotIdx === -1) {
               if (next.length < 6) { next.push(null); slotIdx = next.length - 1; }
-              else return next; // penuh
+              else return next;
             }
             next[slotIdx] = { imageSrc: src, imgNaturalW: img.naturalWidth, imgNaturalH: img.naturalHeight };
             return next;
@@ -690,13 +658,11 @@ const CollageEditor: React.FC = () => {
     });
   }, []);
 
-  // Tambah slot foto
   const addSlot = useCallback(() => {
     if (staged.length >= 6) return;
     setStaged(prev => [...prev, null]);
   }, [staged.length]);
 
-  // Hapus slot foto
   const removeSlot = useCallback((i: number) => {
     setStaged(prev => {
       const next = prev.filter((_, idx) => idx !== i);
@@ -707,7 +673,6 @@ const CollageEditor: React.FC = () => {
     setSelectedCell(null);
   }, []);
 
-  // Update cell (zoom/pan di preview)
   const updateCell = useCallback((i: number, patch: Partial<CellState>) => {
     setCells(prev => prev.map((c, ci) => ci !== i ? c : { ...c, ...patch }));
   }, []);
@@ -746,21 +711,13 @@ const CollageEditor: React.FC = () => {
   }, []);
 
   // ── Layer helpers ──
-  const addTextLayer = useCallback(() => {
-    // Baca langsung dari DOM input (uncontrolled) — 100% fresh, tidak ada stale closure
-    const text = inputRef.current?.value?.trim() ?? '';
-    if (!text) return;
-    const f = textFormRef.current;
-    const layer: TextLayer = {
-      kind: 'text', id: `t_${Date.now()}`,
-      text, font: f.font, color: f.color, size: f.size, bold: f.bold, italic: f.italic, shadow: f.shadow,
-      x: 50, y: 50, rotation: 0,
-    };
+
+  // FIX TYPING BUG: Callback di-memoize dengan useCallback agar referensi stabil.
+  // Sebelumnya inline arrow function membuat TextForm menerima prop baru tiap render.
+  const handleAddTextLayer = useCallback((layer: TextLayer) => {
     setLayers(prev => [...prev, layer]);
     setSelectedLayer(layer.id);
-    // Reset input DOM langsung
-    if (inputRef.current) inputRef.current.value = '';
-  }, []); // tidak bergantung state apapun
+  }, []);
 
   const addStickerLayer = useCallback((symbol: string) => {
     const layer: StickerLayer = {
@@ -780,9 +737,7 @@ const CollageEditor: React.FC = () => {
     setSelectedLayer(null);
   }, []);
 
-  // Drag layer di preview (mouse & touch)
-  const layerDrag = useRef<{ id:string; startX:number; startY:number; origX:number; origY:number } | null>(null);
-
+  // Drag layer via mouse
   const handleLayerMouseDown = useCallback((e: React.MouseEvent, id: string, lx: number, ly: number) => {
     e.stopPropagation();
     setSelectedLayer(id);
@@ -802,13 +757,70 @@ const CollageEditor: React.FC = () => {
     window.addEventListener('mouseup', onUp);
   }, [updateLayer]);
 
-  const handleLayerTouchStart = useCallback((e: React.TouchEvent, id: string, lx: number, ly: number) => {
+  // =============================================
+  // FIX PINCH-TO-ZOOM LAYER:
+  // handleLayerTouchStart sekarang menerima parameter `currentSize`
+  // dan membedakan 2 skenario:
+  //   - 1 jari → drag (posisi layer)
+  //   - 2 jari → pinch untuk ubah ukuran (size) layer
+  // Keduanya menggunakan window event listener agar gesture tetap jalan
+  // walau jari bergerak keluar batas elemen.
+  // =============================================
+  const handleLayerTouchStart = useCallback((
+    e: React.TouchEvent,
+    id: string,
+    lx: number,
+    ly: number,
+    currentSize: number,
+  ) => {
     e.stopPropagation();
-    if (e.touches.length !== 1) return;
     setSelectedLayer(id);
-    layerDrag.current = { id, startX: e.touches[0].clientX, startY: e.touches[0].clientY, origX: lx, origY: ly };
 
-    // Gunakan window listener seperti mouse drag — agar drag tetap jalan walau jari keluar element
+    if (e.touches.length === 2) {
+      // ── 2 jari: pinch untuk resize ──
+      layerDrag.current = null; // batalkan drag jika ada
+      const startDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      );
+      layerPinch.current = { id, startDist, startSize: currentSize };
+
+      const onMove = (ev: TouchEvent) => {
+        if (!layerPinch.current || ev.touches.length < 2) return;
+        ev.preventDefault();
+        const newDist = Math.hypot(
+          ev.touches[0].clientX - ev.touches[1].clientX,
+          ev.touches[0].clientY - ev.touches[1].clientY,
+        );
+        const ratio    = newDist / layerPinch.current.startDist;
+        const newSize  = Math.max(10, Math.min(200, Math.round(layerPinch.current.startSize * ratio)));
+        updateLayer(layerPinch.current.id, { size: newSize });
+      };
+
+      const onEnd = (ev: TouchEvent) => {
+        // Selesai pinch ketika jari kurang dari 2
+        if (ev.touches.length < 2) {
+          layerPinch.current = null;
+          window.removeEventListener('touchmove', onMove);
+          window.removeEventListener('touchend', onEnd);
+        }
+      };
+
+      window.addEventListener('touchmove', onMove, { passive: false });
+      window.addEventListener('touchend', onEnd);
+      return;
+    }
+
+    // ── 1 jari: drag posisi layer ──
+    if (e.touches.length !== 1) return;
+    layerDrag.current = {
+      id,
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      origX: lx,
+      origY: ly,
+    };
+
     const onMove = (ev: TouchEvent) => {
       if (!layerDrag.current || ev.touches.length !== 1 || !previewRef.current) return;
       ev.preventDefault();
@@ -820,17 +832,16 @@ const CollageEditor: React.FC = () => {
         y: Math.max(0, Math.min(100, layerDrag.current.origY + dy)),
       });
     };
+
     const onEnd = () => {
       layerDrag.current = null;
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onEnd);
     };
+
     window.addEventListener('touchmove', onMove, { passive: false });
     window.addEventListener('touchend', onEnd);
   }, [updateLayer]);
-
-  // Tidak dipakai lagi — drag ditangani via window listener di handleLayerTouchStart
-  const handleLayerTouchMove = useCallback((_e: React.TouchEvent) => {}, []);
 
   const handleExport = async () => {
     if (!selectedLayout) return;
@@ -886,7 +897,6 @@ const CollageEditor: React.FC = () => {
         ctx.restore();
       }
 
-      // ── Render layers (teks & stiker) di atas foto ──
       for (const layer of layers) {
         const lx = layer.x / 100 * W;
         const ly = layer.y / 100 * H;
@@ -931,8 +941,6 @@ const CollageEditor: React.FC = () => {
   const [arW, arH] = aspectRatio.split(':').map(Number);
   const categories = ['kotak', 'diagonal', 'chevron', 'gelombang'];
   const selCs = selectedCell !== null ? cells[selectedCell] : null;
-
-  // Step aktif: 1 = upload foto, 2 = pilih layout, 3 = atur & download
   const step = filledCount === 0 ? 1 : !selectedLayout ? 2 : 3;
 
   return (
@@ -977,7 +985,6 @@ const CollageEditor: React.FC = () => {
                 <span className="text-xs text-slate-500">({filledCount}/{staged.length} terisi · maks 6)</span>
               </div>
               <div className="flex items-center gap-2">
-                {/* Upload banyak sekaligus */}
                 <label className="cursor-pointer text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors">
                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-8-8l-4 4m0 0l4 4m-4-4h12"/></svg>
                   Upload semua
@@ -1015,17 +1022,16 @@ const CollageEditor: React.FC = () => {
                               <label className="cursor-pointer p-1 bg-slate-700 hover:bg-slate-600 rounded text-[10px] text-white">
                                 Ganti
                                 <input type="file" accept="image/*" multiple className="hidden" onChange={e => {
-                              if (!e.target.files?.length) return;
-                              const files = Array.from(e.target.files);
-                              // Auto-expand slot jika perlu
-                              setStaged(prev => {
-                                let next = [...prev];
-                                while (next.length < Math.min(6, i + files.length)) next.push(null);
-                                return next;
-                              });
-                              files.forEach((f, fi) => { if (i + fi < 6) uploadToStaged(i + fi, f); });
-                              e.target.value='';
-                            }}/>
+                                  if (!e.target.files?.length) return;
+                                  const files = Array.from(e.target.files);
+                                  setStaged(prev => {
+                                    let next = [...prev];
+                                    while (next.length < Math.min(6, i + files.length)) next.push(null);
+                                    return next;
+                                  });
+                                  files.forEach((f, fi) => { if (i + fi < 6) uploadToStaged(i + fi, f); });
+                                  e.target.value='';
+                                }}/>
                               </label>
                               <button type="button" onClick={() => removeSlot(i)} className="p-1 bg-red-600/80 hover:bg-red-600 rounded text-[10px] text-white">Hapus</button>
                             </div>
@@ -1035,7 +1041,6 @@ const CollageEditor: React.FC = () => {
                             <input type="file" accept="image/*" multiple className="hidden" onChange={e => {
                               if (!e.target.files?.length) return;
                               const files = Array.from(e.target.files);
-                              // Auto-expand slot jika perlu
                               setStaged(prev => {
                                 let next = [...prev];
                                 while (next.length < Math.min(6, i + files.length)) next.push(null);
@@ -1051,41 +1056,15 @@ const CollageEditor: React.FC = () => {
                           </label>
                         )}
                       </div>
-                      {/* Nomor badge */}
                       <span className="absolute top-1 left-1 w-4 h-4 bg-black/60 text-white text-[8px] font-bold rounded-full flex items-center justify-center pointer-events-none">{i+1}</span>
                     </div>
                   );
                 })}
               </div>
-              {/* Tombol upload banyak sekaligus */}
               <label className="flex items-center justify-center gap-2 w-full mt-2 py-2 rounded-lg border border-dashed border-indigo-500/40 bg-indigo-950/20 hover:bg-indigo-950/40 cursor-pointer transition-colors">
                 <input type="file" accept="image/*" multiple className="hidden" onChange={e => {
                   if (!e.target.files) return;
-                  const files = Array.from(e.target.files).slice(0, 6);
-                  // Isi slot kosong dulu, lalu slot yang sudah ada
-                  setStaged(prev => {
-                    let next = [...prev];
-                    // Pastikan cukup slot
-                    while (next.length < Math.min(6, files.length)) next.push(null);
-                    let fileIdx = 0;
-                    // Isi slot kosong dulu
-                    for (let si = 0; si < next.length && fileIdx < files.length; si++) {
-                      if (!next[si]) { fileIdx++; } // akan diisi via uploadToStaged
-                    }
-                    return next;
-                  });
-                  files.forEach((f, fi) => {
-                    // Cari slot kosong ke-fi atau gunakan slot baru
-                    setStaged(prev => {
-                      const emptySlots = prev.map((s, idx) => s === null ? idx : -1).filter(idx => idx >= 0);
-                      const targetSlot = emptySlots[fi] !== undefined ? emptySlots[fi] : fi;
-                      if (targetSlot >= 6) return prev;
-                      const next = [...prev];
-                      while (next.length <= targetSlot) next.push(null);
-                      return next;
-                    });
-                    uploadToStaged(fi < staged.length ? (staged.findIndex((s,i) => !s && i >= fi) >= 0 ? staged.findIndex((s,i) => !s && i >= fi) : fi) : fi, f);
-                  });
+                  uploadMultiple(e.target.files);
                   e.target.value='';
                 }}/>
                 <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1105,10 +1084,9 @@ const CollageEditor: React.FC = () => {
             </div>
           </div>
 
-          {/* ── TAB: TEKS & STIKER (hanya muncul jika layout sudah dipilih) ── */}
+          {/* ── TAB: TEKS & STIKER ── */}
           {selectedLayout && (
             <div className="rounded-xl border border-slate-700 bg-slate-800/30 overflow-hidden">
-              {/* Tab header */}
               <div className="flex border-b border-slate-700">
                 {(['foto','teks','stiker'] as const).map(tab => (
                   <button key={tab} type="button" onClick={() => setActiveTab(tab)}
@@ -1118,16 +1096,14 @@ const CollageEditor: React.FC = () => {
                 ))}
               </div>
 
-              {/* Tab: Teks — TextForm sub-component, state terisolasi */}
+              {/* FIX TYPING: TextForm menerima handleAddTextLayer yang stabil (memoized),
+                  bukan inline arrow function yang baru tiap render */}
               {activeTab === 'teks' && (
-                <TextForm onAdd={layer => { setLayers(prev => [...prev, layer]); setSelectedLayer(layer.id); }} />
+                <TextForm onAdd={handleAddTextLayer} />
               )}
 
-
-              {/* Tab: Stiker */}
               {activeTab === 'stiker' && (
                 <div className="p-3 space-y-3">
-                  {/* Group selector */}
                   <div className="flex gap-1.5 flex-wrap">
                     {STICKERS.map(g => (
                       <button key={g.group} type="button" onClick={() => setShowStickerGroup(g.group)}
@@ -1136,7 +1112,6 @@ const CollageEditor: React.FC = () => {
                       </button>
                     ))}
                   </div>
-                  {/* Stiker grid */}
                   <div className="grid grid-cols-6 gap-1.5">
                     {STICKERS.find(g => g.group === showStickerGroup)?.items.map(sym => (
                       <button key={sym} type="button" onClick={() => addStickerLayer(sym)}
@@ -1170,7 +1145,6 @@ const CollageEditor: React.FC = () => {
                       </span>
                       {isSel && (
                         <div className="flex items-center gap-1 flex-shrink-0">
-                          {/* Size slider inline */}
                           <input type="range" min={layer.kind === 'text' ? 14 : 20} max={layer.kind === 'text' ? 120 : 150}
                             value={layer.size}
                             onChange={e => updateLayer(layer.id, { size: Number(e.target.value) })}
@@ -1201,7 +1175,6 @@ const CollageEditor: React.FC = () => {
                 </span>
               </div>
               <div className="p-3 space-y-3">
-                {/* Filter bentuk */}
                 <div className="flex gap-1.5 flex-wrap">
                   <button type="button" onClick={() => setFilterCat(null)}
                     className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${filterCat === null ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>Semua</button>
@@ -1223,14 +1196,12 @@ const CollageEditor: React.FC = () => {
                   <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-56 overflow-y-auto pr-1">
                     {matchingLayouts.map(layout => {
                       const isActive = selectedLayout?.id === layout.id;
-                      // Warna alternating kontras supaya batas antar sel jelas
                       const CA = ['#4338ca','#818cf8','#312e81','#a5b4fc','#3730a3','#6366f1'];
                       const CI = ['#475569','#94a3b8','#1e293b','#64748b','#334155','#7f8ea3'];
-                      const STROKE = '#000000'; // garis tegas hitam
+                      const STROKE = '#000000';
                       return (
                         <button key={layout.id} type="button" onClick={() => handleSelectLayout(layout)} title={layout.name}
                           className={`group rounded-lg overflow-hidden transition-all ${isActive ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-slate-800 scale-105' : 'ring-1 ring-slate-600 hover:ring-indigo-400'}`}>
-                          {/* SVG thumbnail — polygon presisi untuk semua bentuk */}
                           <div className="aspect-square bg-black">
                             <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style={{display:'block',width:'100%',height:'100%'}}>
                               {layout.cells.map((cell, ci) => {
@@ -1263,8 +1234,6 @@ const CollageEditor: React.FC = () => {
                 <span className="text-sm font-semibold text-white">Pengaturan</span>
               </div>
               <div className="p-4 space-y-4">
-
-                {/* Aspek Rasio */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">Aspek Rasio Output</label>
                   <div className="grid grid-cols-3 gap-1.5">
@@ -1278,7 +1247,6 @@ const CollageEditor: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Gap */}
                 <div>
                   <div className="flex justify-between items-center mb-1.5">
                     <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Jarak Antar Foto</label>
@@ -1291,7 +1259,6 @@ const CollageEditor: React.FC = () => {
                   )}
                 </div>
 
-                {/* Background */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Warna Background</label>
                   <div className="flex items-center gap-2 mb-1.5">
@@ -1309,7 +1276,6 @@ const CollageEditor: React.FC = () => {
                     ))}
                   </div>
                 </div>
-
               </div>
             </div>
           )}
@@ -1332,7 +1298,6 @@ const CollageEditor: React.FC = () => {
         {/* ═══ PANEL KANAN: Preview ═══ */}
         <div>
           {!selectedLayout ? (
-            /* Placeholder saat belum pilih layout */
             <div className="w-full rounded-xl overflow-hidden ring-1 ring-slate-700 bg-slate-800/50 flex flex-col items-center justify-center py-16 gap-4 text-center px-6"
               style={{ minHeight: '280px' }}>
               {filledCount === 0 ? (
@@ -1373,17 +1338,13 @@ const CollageEditor: React.FC = () => {
                 </div>
               </div>
 
-              {/* Preview — pakai position relative + aspect-ratio. 
-                  TIDAK overflow-hidden di sini karena akan memotong layer teks.
-                  Tiap foto sudah di-clip di dalam CellEditor masing-masing. */}
-              {/* ref di SINI — outer wrapper, bukan inner div */}
               <div
                 ref={previewRef}
                 className="w-full rounded-xl shadow-2xl ring-1 ring-slate-700"
                 style={{ position: 'relative', paddingBottom: `${(arH / arW) * 100}%` }}
                 onClick={() => setSelectedLayer(null)}
               >
-                {/* Foto — overflow:hidden untuk clip foto ke batas */}
+                {/* Foto */}
                 <div
                   className="absolute inset-0 rounded-xl overflow-hidden"
                   style={{ background: bgColor }}
@@ -1401,7 +1362,7 @@ const CollageEditor: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Layer teks & stiker — langsung di dalam outer wrapper, tanpa container pointer-blocking */}
+                {/* Layer teks & stiker */}
                 {layers.map(layer => {
                   const isSel = selectedLayer === layer.id;
                   const isText = layer.kind === 'text';
@@ -1426,11 +1387,12 @@ const CollageEditor: React.FC = () => {
                         boxSizing: 'border-box',
                         outline: isSel ? '2px dashed #818cf8' : 'none',
                         outlineOffset: '2px',
+                        // Tampilkan hint pinch saat layer dipilih di mobile
+                        touchAction: 'none',
                       }}
                       onMouseDown={e => { e.stopPropagation(); handleLayerMouseDown(e, layer.id, layer.x, layer.y); }}
-                      onTouchStart={e => { e.stopPropagation(); handleLayerTouchStart(e, layer.id, layer.x, layer.y); }}
-                      onTouchMove={handleLayerTouchMove}
-                      onTouchEnd={() => { layerDrag.current = null; }}
+                      // FIX PINCH: Kirim layer.size sebagai parameter currentSize
+                      onTouchStart={e => { e.stopPropagation(); handleLayerTouchStart(e, layer.id, layer.x, layer.y, layer.size); }}
                     >
                       {isText ? (
                         <span style={{
@@ -1453,6 +1415,24 @@ const CollageEditor: React.FC = () => {
                           lineHeight: 1,
                         }}>
                           {sl.symbol}
+                        </span>
+                      )}
+                      {/* Hint pinch di mobile */}
+                      {isSel && (
+                        <span style={{
+                          position: 'absolute',
+                          bottom: -18,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          fontSize: 9,
+                          color: 'rgba(255,255,255,0.6)',
+                          background: 'rgba(0,0,0,0.5)',
+                          padding: '1px 5px',
+                          borderRadius: 4,
+                          whiteSpace: 'nowrap',
+                          pointerEvents: 'none',
+                        }}>
+                          🤏 pinch untuk resize
                         </span>
                       )}
                       {isSel && (
@@ -1479,7 +1459,7 @@ const CollageEditor: React.FC = () => {
                     </div>
                   );
                 })}
-              </div>{/* end preview wrapper */}
+              </div>
 
               {/* Progress dots */}
               <div className="flex items-center gap-2 mt-2">
@@ -1491,7 +1471,7 @@ const CollageEditor: React.FC = () => {
                 <span className="text-xs text-slate-500">{cells.filter(c=>c?.imageSrc).length} / {selectedLayout.cells.length} foto</span>
               </div>
 
-              {/* ZOOM CONTROLS DI BAWAH PREVIEW */}
+              {/* ZOOM CONTROLS */}
               <div className={`mt-3 rounded-xl border transition-all duration-200 overflow-hidden ${selCs?.imageSrc ? 'border-indigo-500/50 bg-indigo-950/30' : 'border-slate-700/50 bg-slate-800/30'}`}>
                 <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
                   <div className="flex items-center gap-2">
