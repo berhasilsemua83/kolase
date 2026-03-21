@@ -467,7 +467,7 @@ const CollageEditor: React.FC = () => {
   const [layers, setLayers]             = useState<Layer[]>([]);
   const [selectedLayer, setSelectedLayer] = useState<string | null>(null);
   const [activeTab, setActiveTab]       = useState<'foto'|'teks'|'stiker'>('foto');
-  // Form teks baru
+  // Form teks baru — pakai state biasa, ref untuk baca nilai terkini di addTextLayer
   const [newText, setNewText]           = useState('');
   const [newFont, setNewFont]           = useState('sans');
   const [newColor, setNewColor]         = useState('#ffffff');
@@ -476,6 +476,8 @@ const CollageEditor: React.FC = () => {
   const [newItalic, setNewItalic]       = useState(false);
   const [newShadow, setNewShadow]       = useState(true);
   const [showStickerGroup, setShowStickerGroup] = useState('Panah');
+  // Ref untuk selalu baca nilai terkini tanpa stale closure
+  const textFormRef = useRef({ text:'', font:'sans', color:'#ffffff', size:40, bold:false, italic:false, shadow:true });
   const previewRef = useRef<HTMLDivElement>(null);
 
   // Jumlah foto yang sudah diisi di staging
@@ -639,17 +641,19 @@ const CollageEditor: React.FC = () => {
 
   // ── Layer helpers ──
   const addTextLayer = useCallback(() => {
-    if (!newText.trim()) return;
+    // Baca dari ref — selalu nilai terkini, tidak ada stale closure
+    const { text, font, color, size, bold, italic, shadow } = textFormRef.current;
+    if (!text.trim()) return;
     const layer: TextLayer = {
       kind: 'text', id: `t_${Date.now()}`,
-      text: newText, font: newFont, color: newColor,
-      size: newSize, bold: newBold, italic: newItalic, shadow: newShadow,
+      text, font, color, size, bold, italic, shadow,
       x: 50, y: 50, rotation: 0,
     };
     setLayers(prev => [...prev, layer]);
     setSelectedLayer(layer.id);
     setNewText('');
-  }, [newText, newFont, newColor, newSize, newBold, newItalic, newShadow]);
+    textFormRef.current.text = '';
+  }, []); // tidak perlu dependency — baca dari ref selalu fresh
 
   const addStickerLayer = useCallback((symbol: string) => {
     const layer: StickerLayer = {
@@ -1013,17 +1017,22 @@ const CollageEditor: React.FC = () => {
                   {/* Input teks */}
                   <div>
                     <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
-                    <input type="text" value={newText} onChange={e => setNewText(e.target.value)}
+                    <input
+                      type="text"
+                      value={newText}
+                      onChange={e => { setNewText(e.target.value); textFormRef.current.text = e.target.value; }}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTextLayer(); }}}
                       placeholder="Ketik teks..."
-                      onKeyDown={e => e.key === 'Enter' && addTextLayer()}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"/>
+                      autoComplete="off"
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                    />
                   </div>
                   {/* Font */}
                   <div>
                     <label className="block text-[10px] text-slate-400 mb-1">Font</label>
                     <div className="grid grid-cols-3 gap-1">
                       {FONTS.map(f => (
-                        <button key={f.id} type="button" onClick={() => setNewFont(f.id)}
+                        <button key={f.id} type="button" onClick={() => { setNewFont(f.id); textFormRef.current.font = f.id; }}
                           className={`py-1.5 px-2 rounded-lg text-xs border transition-colors truncate ${newFont === f.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:border-indigo-500/50'}`}
                           style={{ fontFamily: f.css }}>
                           {f.label}
@@ -1036,12 +1045,12 @@ const CollageEditor: React.FC = () => {
                     <label className="block text-[10px] text-slate-400 mb-1">Warna</label>
                     <div className="flex gap-1.5 flex-wrap">
                       {TEXT_COLORS.map(c => (
-                        <button key={c} type="button" onClick={() => setNewColor(c)}
+                        <button key={c} type="button" onClick={() => { setNewColor(c); textFormRef.current.color = c; }}
                           className={`w-6 h-6 rounded-full border-2 transition-all ${newColor === c ? 'border-white scale-125' : 'border-slate-600 hover:scale-110'}`}
                           style={{ background: c }}/>
                       ))}
                       <label className="w-6 h-6 rounded-full border-2 border-slate-500 overflow-hidden cursor-pointer hover:scale-110 transition-all" style={{ background: newColor }}>
-                        <input type="color" value={newColor} onChange={e => setNewColor(e.target.value)} className="opacity-0 w-0 h-0"/>
+                        <input type="color" value={newColor} onChange={e => { setNewColor(e.target.value); textFormRef.current.color = e.target.value; }} className="opacity-0 w-0 h-0"/>
                       </label>
                     </div>
                   </div>
@@ -1049,15 +1058,15 @@ const CollageEditor: React.FC = () => {
                   <div className="flex items-center gap-3">
                     <div className="flex-1">
                       <label className="block text-[10px] text-slate-400 mb-1">Ukuran: {newSize}px</label>
-                      <input type="range" min={14} max={120} value={newSize} onChange={e => setNewSize(Number(e.target.value))}
+                      <input type="range" min={14} max={120} value={newSize} onChange={e => { const v = Number(e.target.value); setNewSize(v); textFormRef.current.size = v; }}
                         className="w-full h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
                     </div>
                     <div className="flex gap-1 mt-3">
-                      <button type="button" onClick={() => setNewBold(b => !b)}
+                      <button type="button" onClick={() => { const v = !textFormRef.current.bold; setNewBold(v); textFormRef.current.bold = v; }}
                         className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${newBold ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>B</button>
-                      <button type="button" onClick={() => setNewItalic(b => !b)}
+                      <button type="button" onClick={() => { const v = !textFormRef.current.italic; setNewItalic(v); textFormRef.current.italic = v; }}
                         className={`w-8 h-8 rounded-lg text-sm italic transition-colors ${newItalic ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>I</button>
-                      <button type="button" onClick={() => setNewShadow(b => !b)}
+                      <button type="button" onClick={() => { const v = !textFormRef.current.shadow; setNewShadow(v); textFormRef.current.shadow = v; }}
                         title="Shadow"
                         className={`w-8 h-8 rounded-lg text-sm transition-colors ${newShadow ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>S</button>
                     </div>
