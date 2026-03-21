@@ -249,25 +249,85 @@ const CellEditor: React.FC<CellEditorProps> = ({
     window.addEventListener('mouseup', onUp);
   };
 
-  const touchStart = useRef({ x: 0, y: 0, offX: 0, offY: 0 });
+  // ── State untuk touch (1 jari = drag, 2 jari = pinch zoom) ──
+  const touchStart   = useRef({ x: 0, y: 0, offX: 0, offY: 0 });
+  const pinchStart   = useRef({ dist: 0, scale: 1, midX: 0, midY: 0, offX: 0, offY: 0 });
+  const isPinching   = useRef(false);
+
+  const getTouchDist = (t: React.TouchList) =>
+    Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const getTouchMid  = (t: React.TouchList) => ({
+    x: (t[0].clientX + t[1].clientX) / 2,
+    y: (t[0].clientY + t[1].clientY) / 2,
+  });
+
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (!cs.imageSrc || e.touches.length !== 1) return;
-    onSelect(idx);
-    isDragging.current = true;
-    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, offX: cs.offsetX, offY: cs.offsetY };
-  };
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging.current || e.touches.length !== 1 || !containerRef.current) return;
+    if (!cs.imageSrc) return;
     e.preventDefault();
-    const rect = containerRef.current.getBoundingClientRect();
-    const cellW = rect.width, cellH = rect.height, s = cs.scale;
-    const { maxOffX, maxOffY } = calcMaxOffset(cs.imgNaturalW, cs.imgNaturalH, cellW, cellH, s);
-    onUpdate(idx, {
-      offsetX: Math.max(-maxOffX, Math.min(maxOffX, touchStart.current.offX + (e.touches[0].clientX - touchStart.current.x) / (cellW * s))),
-      offsetY: Math.max(-maxOffY, Math.min(maxOffY, touchStart.current.offY + (e.touches[0].clientY - touchStart.current.y) / (cellH * s))),
-    });
+    onSelect(idx);
+
+    if (e.touches.length === 2) {
+      // Pinch start
+      isPinching.current  = true;
+      isDragging.current  = false;
+      pinchStart.current  = {
+        dist:  getTouchDist(e.touches),
+        scale: cs.scale,
+        midX:  getTouchMid(e.touches).x,
+        midY:  getTouchMid(e.touches).y,
+        offX:  cs.offsetX,
+        offY:  cs.offsetY,
+      };
+    } else if (e.touches.length === 1 && !isPinching.current) {
+      // 1 jari drag
+      isDragging.current = true;
+      touchStart.current = {
+        x: e.touches[0].clientX, y: e.touches[0].clientY,
+        offX: cs.offsetX, offY: cs.offsetY,
+      };
+    }
   };
-  const handleTouchEnd = () => { isDragging.current = false; };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!cs.imageSrc || !containerRef.current) return;
+    e.preventDefault();
+    const rect  = containerRef.current.getBoundingClientRect();
+    const cellW = rect.width, cellH = rect.height;
+
+    if (e.touches.length === 2 && isPinching.current) {
+      // ── Pinch zoom ──
+      const newDist  = getTouchDist(e.touches);
+      const ratio    = newDist / pinchStart.current.dist;
+      const newScale = Math.max(0.3, Math.min(3, pinchStart.current.scale * ratio));
+      const { maxOffX, maxOffY } = calcMaxOffset(cs.imgNaturalW, cs.imgNaturalH, cellW, cellH, newScale);
+      onUpdate(idx, {
+        scale:   newScale,
+        offsetX: Math.max(-maxOffX, Math.min(maxOffX, pinchStart.current.offX)),
+        offsetY: Math.max(-maxOffY, Math.min(maxOffY, pinchStart.current.offY)),
+      });
+    } else if (e.touches.length === 1 && isDragging.current && !isPinching.current) {
+      // ── 1 jari drag ──
+      const s = cs.scale;
+      const { maxOffX, maxOffY } = calcMaxOffset(cs.imgNaturalW, cs.imgNaturalH, cellW, cellH, s);
+      onUpdate(idx, {
+        offsetX: Math.max(-maxOffX, Math.min(maxOffX, touchStart.current.offX + (e.touches[0].clientX - touchStart.current.x) / (cellW * s))),
+        offsetY: Math.max(-maxOffY, Math.min(maxOffY, touchStart.current.offY + (e.touches[0].clientY - touchStart.current.y) / (cellH * s))),
+      });
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (e.touches.length < 2) isPinching.current = false;
+    if (e.touches.length === 0) isDragging.current = false;
+    // Jika dari pinch kembali ke 1 jari, reset drag start dari posisi sekarang
+    if (e.touches.length === 1 && !isPinching.current) {
+      isDragging.current = true;
+      touchStart.current = {
+        x: e.touches[0].clientX, y: e.touches[0].clientY,
+        offX: cs.offsetX, offY: cs.offsetY,
+      };
+    }
+  };
 
   const getImgStyle = (): React.CSSProperties => {
     if (!cs.imageSrc) return { display: 'none' };
