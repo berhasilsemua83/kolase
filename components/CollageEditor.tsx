@@ -28,6 +28,51 @@ interface CellState {
   offsetY: number;
 }
 
+
+// =============================================
+// LAYER TYPES (Teks & Stiker di atas foto)
+// =============================================
+interface BaseLayer {
+  id: string;
+  x: number;   // % dari canvas width (0-100)
+  y: number;   // % dari canvas height (0-100)
+  size: number; // px font/stiker
+  rotation: number; // derajat
+}
+interface TextLayer extends BaseLayer {
+  kind: 'text';
+  text: string;
+  font: string;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+  shadow: boolean;
+}
+interface StickerLayer extends BaseLayer {
+  kind: 'sticker';
+  symbol: string; // emoji / unicode
+}
+type Layer = TextLayer | StickerLayer;
+
+const FONTS = [
+  { id:'sans',    label:'Sans',     css:'Arial, sans-serif' },
+  { id:'serif',   label:'Serif',    css:'Georgia, serif' },
+  { id:'mono',    label:'Mono',     css:'"Courier New", monospace' },
+  { id:'rounded', label:'Rounded',  css:'"Trebuchet MS", sans-serif' },
+  { id:'display', label:'Display',  css:'Impact, fantasy' },
+  { id:'script',  label:'Script',   css:'"Palatino Linotype", cursive' },
+];
+
+const STICKERS = [
+  { group:'Panah',   items:['→','←','↑','↓','↗','↙','↔','↕','➡','⬅','⬆','⬇','➜','➤','⇒'] },
+  { group:'Hati',    items:['❤️','🧡','💛','💚','💙','💜','🖤','🤍','💕','💞','💓','💗','💖','💘','💝'] },
+  { group:'Bintang', items:['⭐','🌟','✨','💫','⚡','🔥','💥','❄️','🌈','☀️','🌙','⚽','🎯','🏆','🎁'] },
+  { group:'Tanda',   items:['✅','❌','⚠️','❗','❓','💯','🔴','🟡','🟢','🔵','⬛','🟥','📍','📌','🎀'] },
+  { group:'Wajah',   items:['😊','😂','🥰','😎','😍','🤩','👍','👎','👏','🙌','💪','🤞','✌️','🫶','🎉'] },
+];
+
+const TEXT_COLORS = ['#ffffff','#000000','#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#a855f7','#ec4899','#06b6d4'];
+
 // =============================================
 // HELPER: konversi clip string ke CSS clipPath
 // Input:  "0 0,60 0,40 100,0 100"
@@ -418,6 +463,21 @@ const CollageEditor: React.FC = () => {
   const [dragOverCell, setDragOverCell] = useState<number | null>(null);
   const [selectedCell, setSelectedCell] = useState<number | null>(null);
 
+  // ── Layers: teks & stiker ──
+  const [layers, setLayers]             = useState<Layer[]>([]);
+  const [selectedLayer, setSelectedLayer] = useState<string | null>(null);
+  const [activeTab, setActiveTab]       = useState<'foto'|'teks'|'stiker'>('foto');
+  // Form teks baru
+  const [newText, setNewText]           = useState('');
+  const [newFont, setNewFont]           = useState('sans');
+  const [newColor, setNewColor]         = useState('#ffffff');
+  const [newSize, setNewSize]           = useState(40);
+  const [newBold, setNewBold]           = useState(false);
+  const [newItalic, setNewItalic]       = useState(false);
+  const [newShadow, setNewShadow]       = useState(true);
+  const [showStickerGroup, setShowStickerGroup] = useState('Panah');
+  const previewRef = useRef<HTMLDivElement>(null);
+
   // Jumlah foto yang sudah diisi di staging
   const filledCount = staged.filter(s => s !== null).length;
 
@@ -577,6 +637,79 @@ const CollageEditor: React.FC = () => {
     }));
   }, []);
 
+  // ── Layer helpers ──
+  const addTextLayer = useCallback(() => {
+    if (!newText.trim()) return;
+    const layer: TextLayer = {
+      kind: 'text', id: `t_${Date.now()}`,
+      text: newText, font: newFont, color: newColor,
+      size: newSize, bold: newBold, italic: newItalic, shadow: newShadow,
+      x: 50, y: 50, rotation: 0,
+    };
+    setLayers(prev => [...prev, layer]);
+    setSelectedLayer(layer.id);
+    setNewText('');
+  }, [newText, newFont, newColor, newSize, newBold, newItalic, newShadow]);
+
+  const addStickerLayer = useCallback((symbol: string) => {
+    const layer: StickerLayer = {
+      kind: 'sticker', id: `s_${Date.now()}`,
+      symbol, size: 48, x: 50, y: 50, rotation: 0,
+    };
+    setLayers(prev => [...prev, layer]);
+    setSelectedLayer(layer.id);
+  }, []);
+
+  const updateLayer = useCallback((id: string, patch: Partial<Layer>) => {
+    setLayers(prev => prev.map(l => l.id !== id ? l : { ...l, ...patch } as Layer));
+  }, []);
+
+  const removeLayer = useCallback((id: string) => {
+    setLayers(prev => prev.filter(l => l.id !== id));
+    setSelectedLayer(null);
+  }, []);
+
+  // Drag layer di preview (mouse & touch)
+  const layerDrag = useRef<{ id:string; startX:number; startY:number; origX:number; origY:number } | null>(null);
+
+  const handleLayerMouseDown = useCallback((e: React.MouseEvent, id: string, lx: number, ly: number) => {
+    e.stopPropagation();
+    setSelectedLayer(id);
+    layerDrag.current = { id, startX: e.clientX, startY: e.clientY, origX: lx, origY: ly };
+    const onMove = (ev: MouseEvent) => {
+      if (!layerDrag.current || !previewRef.current) return;
+      const rect = previewRef.current.getBoundingClientRect();
+      const dx = (ev.clientX - layerDrag.current.startX) / rect.width * 100;
+      const dy = (ev.clientY - layerDrag.current.startY) / rect.height * 100;
+      updateLayer(layerDrag.current.id, {
+        x: Math.max(0, Math.min(100, layerDrag.current.origX + dx)),
+        y: Math.max(0, Math.min(100, layerDrag.current.origY + dy)),
+      });
+    };
+    const onUp = () => { layerDrag.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [updateLayer]);
+
+  const handleLayerTouchStart = useCallback((e: React.TouchEvent, id: string, lx: number, ly: number) => {
+    e.stopPropagation();
+    if (e.touches.length !== 1) return;
+    setSelectedLayer(id);
+    layerDrag.current = { id, startX: e.touches[0].clientX, startY: e.touches[0].clientY, origX: lx, origY: ly };
+  }, []);
+
+  const handleLayerTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!layerDrag.current || e.touches.length !== 1 || !previewRef.current) return;
+    e.stopPropagation();
+    const rect = previewRef.current.getBoundingClientRect();
+    const dx = (e.touches[0].clientX - layerDrag.current.startX) / rect.width * 100;
+    const dy = (e.touches[0].clientY - layerDrag.current.startY) / rect.height * 100;
+    updateLayer(layerDrag.current.id, {
+      x: Math.max(0, Math.min(100, layerDrag.current.origX + dx)),
+      y: Math.max(0, Math.min(100, layerDrag.current.origY + dy)),
+    });
+  }, [updateLayer]);
+
   const handleExport = async () => {
     if (!selectedLayout) return;
     setIsExporting(true);
@@ -628,6 +761,36 @@ const CollageEditor: React.FC = () => {
         }
         ctx.clip();
         ctx.drawImage(img, drawX, drawY, finalW, finalH);
+        ctx.restore();
+      }
+
+      // ── Render layers (teks & stiker) di atas foto ──
+      for (const layer of layers) {
+        const lx = layer.x / 100 * W;
+        const ly = layer.y / 100 * H;
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate((layer.rotation * Math.PI) / 180);
+        if (layer.kind === 'text') {
+          const fontStr = `${layer.italic ? 'italic ' : ''}${layer.bold ? 'bold ' : ''}${layer.size * (W / 400)}px ${FONTS.find(f => f.id === layer.font)?.css || 'Arial'}`;
+          ctx.font = fontStr;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          if (layer.shadow) {
+            ctx.shadowColor = 'rgba(0,0,0,0.7)';
+            ctx.shadowBlur = layer.size * 0.15 * (W / 400);
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
+          }
+          ctx.fillStyle = layer.color;
+          ctx.fillText(layer.text, 0, 0);
+        } else {
+          const sz = layer.size * (W / 400);
+          ctx.font = `${sz}px serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(layer.symbol, 0, 0);
+        }
         ctx.restore();
       }
 
@@ -820,6 +983,156 @@ const CollageEditor: React.FC = () => {
             </div>
           </div>
 
+          {/* ── TAB: TEKS & STIKER (hanya muncul jika layout sudah dipilih) ── */}
+          {selectedLayout && (
+            <div className="rounded-xl border border-slate-700 bg-slate-800/30 overflow-hidden">
+              {/* Tab header */}
+              <div className="flex border-b border-slate-700">
+                {(['foto','teks','stiker'] as const).map(tab => (
+                  <button key={tab} type="button" onClick={() => setActiveTab(tab)}
+                    className={`flex-1 py-2.5 text-xs font-semibold capitalize transition-colors ${activeTab === tab ? 'bg-indigo-600/30 text-white border-b-2 border-indigo-500' : 'text-slate-400 hover:text-slate-300'}`}>
+                    {tab === 'foto' ? '🖼 Foto' : tab === 'teks' ? '✏️ Teks' : '🎨 Stiker'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Tab: Teks */}
+              {activeTab === 'teks' && (
+                <div className="p-3 space-y-3">
+                  {/* Input teks */}
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
+                    <input type="text" value={newText} onChange={e => setNewText(e.target.value)}
+                      placeholder="Ketik teks..."
+                      onKeyDown={e => e.key === 'Enter' && addTextLayer()}
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"/>
+                  </div>
+                  {/* Font */}
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Font</label>
+                    <div className="grid grid-cols-3 gap-1">
+                      {FONTS.map(f => (
+                        <button key={f.id} type="button" onClick={() => setNewFont(f.id)}
+                          className={`py-1.5 px-2 rounded-lg text-xs border transition-colors truncate ${newFont === f.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:border-indigo-500/50'}`}
+                          style={{ fontFamily: f.css }}>
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Warna */}
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Warna</label>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {TEXT_COLORS.map(c => (
+                        <button key={c} type="button" onClick={() => setNewColor(c)}
+                          className={`w-6 h-6 rounded-full border-2 transition-all ${newColor === c ? 'border-white scale-125' : 'border-slate-600 hover:scale-110'}`}
+                          style={{ background: c }}/>
+                      ))}
+                      <label className="w-6 h-6 rounded-full border-2 border-slate-500 overflow-hidden cursor-pointer hover:scale-110 transition-all" style={{ background: newColor }}>
+                        <input type="color" value={newColor} onChange={e => setNewColor(e.target.value)} className="opacity-0 w-0 h-0"/>
+                      </label>
+                    </div>
+                  </div>
+                  {/* Ukuran + style */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[10px] text-slate-400 mb-1">Ukuran: {newSize}px</label>
+                      <input type="range" min={14} max={120} value={newSize} onChange={e => setNewSize(Number(e.target.value))}
+                        className="w-full h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
+                    </div>
+                    <div className="flex gap-1 mt-3">
+                      <button type="button" onClick={() => setNewBold(b => !b)}
+                        className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${newBold ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>B</button>
+                      <button type="button" onClick={() => setNewItalic(b => !b)}
+                        className={`w-8 h-8 rounded-lg text-sm italic transition-colors ${newItalic ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>I</button>
+                      <button type="button" onClick={() => setNewShadow(b => !b)}
+                        title="Shadow"
+                        className={`w-8 h-8 rounded-lg text-sm transition-colors ${newShadow ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>S</button>
+                    </div>
+                  </div>
+                  {/* Preview teks */}
+                  <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[40px] flex items-center justify-center overflow-hidden">
+                    <span style={{
+                      fontFamily: FONTS.find(f => f.id === newFont)?.css,
+                      color: newColor,
+                      fontSize: `${Math.min(newSize, 36)}px`,
+                      fontWeight: newBold ? 'bold' : 'normal',
+                      fontStyle: newItalic ? 'italic' : 'normal',
+                      textShadow: newShadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
+                    }}>{newText || 'Preview Teks'}</span>
+                  </div>
+                  <button type="button" onClick={addTextLayer} disabled={!newText.trim()}
+                    className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-semibold transition-colors">
+                    + Tambah ke Kolase
+                  </button>
+                </div>
+              )}
+
+              {/* Tab: Stiker */}
+              {activeTab === 'stiker' && (
+                <div className="p-3 space-y-3">
+                  {/* Group selector */}
+                  <div className="flex gap-1.5 flex-wrap">
+                    {STICKERS.map(g => (
+                      <button key={g.group} type="button" onClick={() => setShowStickerGroup(g.group)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${showStickerGroup === g.group ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>
+                        {g.group}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Stiker grid */}
+                  <div className="grid grid-cols-6 gap-1.5">
+                    {STICKERS.find(g => g.group === showStickerGroup)?.items.map(sym => (
+                      <button key={sym} type="button" onClick={() => addStickerLayer(sym)}
+                        className="aspect-square rounded-lg bg-slate-700 hover:bg-slate-600 text-xl flex items-center justify-center transition-colors hover:scale-110 active:scale-95">
+                        {sym}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-500 text-center">Klik stiker untuk menambahkan ke kolase</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── DAFTAR LAYER AKTIF ── */}
+          {selectedLayout && layers.length > 0 && (
+            <div className="rounded-xl border border-slate-700 bg-slate-800/30 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/50">
+                <span className="text-xs font-semibold text-slate-300">Layer ({layers.length})</span>
+                <button type="button" onClick={() => setLayers([])} className="text-[10px] text-red-400/60 hover:text-red-400 transition-colors">Hapus Semua</button>
+              </div>
+              <div className="p-2 space-y-1 max-h-40 overflow-y-auto">
+                {[...layers].reverse().map(layer => {
+                  const isSel = selectedLayer === layer.id;
+                  return (
+                    <div key={layer.id} onClick={() => setSelectedLayer(isSel ? null : layer.id)}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${isSel ? 'bg-indigo-600/30 border border-indigo-500/40' : 'bg-slate-700/40 hover:bg-slate-700/60'}`}>
+                      <span className="text-sm">{layer.kind === 'sticker' ? layer.symbol : '✏️'}</span>
+                      <span className="text-xs text-slate-300 truncate flex-1">
+                        {layer.kind === 'text' ? layer.text : `Stiker ${layer.symbol}`}
+                      </span>
+                      {isSel && (
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {/* Size slider inline */}
+                          <input type="range" min={layer.kind === 'text' ? 14 : 20} max={layer.kind === 'text' ? 120 : 150}
+                            value={layer.size}
+                            onChange={e => updateLayer(layer.id, { size: Number(e.target.value) })}
+                            className="w-16 h-1.5 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-600"
+                            onClick={e => e.stopPropagation()}
+                          />
+                        </div>
+                      )}
+                      <button type="button" onClick={e => { e.stopPropagation(); removeLayer(layer.id); }}
+                        className="w-5 h-5 flex-shrink-0 bg-red-600/60 hover:bg-red-500 rounded text-[10px] text-white flex items-center justify-center">✕</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* ── STEP 2: PILIH LAYOUT ── */}
           {filledCount > 0 && (
             <div className={`rounded-xl border transition-all ${!selectedLayout ? 'border-indigo-500/60 bg-indigo-950/20' : 'border-slate-700 bg-slate-800/30'}`}>
@@ -1005,8 +1318,9 @@ const CollageEditor: React.FC = () => {
                 </div>
               </div>
 
-              <div className="w-full rounded-xl overflow-hidden shadow-2xl ring-1 ring-slate-700 relative"
-                style={{ aspectRatio: `${arW} / ${arH}`, background: bgColor }}>
+              <div ref={previewRef} className="w-full rounded-xl overflow-hidden shadow-2xl ring-1 ring-slate-700 relative"
+                style={{ aspectRatio: `${arW} / ${arH}`, background: bgColor }}
+                onClick={() => setSelectedLayer(null)}>
                 {selectedLayout.cells.map((cell, i) => (
                   <div key={`${selectedLayout.id}-${i}`} style={getCellStyle(cell)}>
                     <CellEditor
@@ -1018,6 +1332,55 @@ const CollageEditor: React.FC = () => {
                     />
                   </div>
                 ))}
+
+                {/* ── LAYER OVERLAY ── */}
+                {layers.map(layer => {
+                  const isSel = selectedLayer === layer.id;
+                  const fontCss = layer.kind === 'text' ? FONTS.find(f => f.id === layer.font)?.css : 'serif';
+                  return (
+                    <div key={layer.id}
+                      style={{
+                        position: 'absolute',
+                        left: `${layer.x}%`, top: `${layer.y}%`,
+                        transform: `translate(-50%, -50%) rotate(${layer.rotation}deg)`,
+                        cursor: 'grab',
+                        userSelect: 'none',
+                        zIndex: 20,
+                        padding: '4px',
+                        borderRadius: '4px',
+                        outline: isSel ? '2px dashed rgba(99,102,241,0.8)' : '2px dashed transparent',
+                      }}
+                      onMouseDown={e => handleLayerMouseDown(e, layer.id, layer.x, layer.y)}
+                      onTouchStart={e => handleLayerTouchStart(e, layer.id, layer.x, layer.y)}
+                      onTouchMove={handleLayerTouchMove}
+                      onTouchEnd={() => { layerDrag.current = null; }}
+                      onClick={e => { e.stopPropagation(); setSelectedLayer(isSel ? null : layer.id); }}
+                    >
+                      {layer.kind === 'text' ? (
+                        <span style={{
+                          fontFamily: fontCss,
+                          fontSize: `${layer.size}px`,
+                          fontWeight: layer.bold ? 'bold' : 'normal',
+                          fontStyle: layer.italic ? 'italic' : 'normal',
+                          color: layer.color,
+                          textShadow: layer.shadow ? '1px 1px 4px rgba(0,0,0,0.8)' : 'none',
+                          whiteSpace: 'nowrap',
+                          display: 'block',
+                        }}>{layer.text}</span>
+                      ) : (
+                        <span style={{ fontSize: `${layer.size}px`, lineHeight: 1, display: 'block' }}>{layer.symbol}</span>
+                      )}
+                      {/* Delete button saat dipilih */}
+                      {isSel && (
+                        <button type="button"
+                          onClick={e => { e.stopPropagation(); removeLayer(layer.id); }}
+                          style={{ position:'absolute', top:-10, right:-10, width:20, height:20, background:'#ef4444', borderRadius:'50%', border:'none', color:'white', fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', zIndex:30 }}>
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Progress dots */}
