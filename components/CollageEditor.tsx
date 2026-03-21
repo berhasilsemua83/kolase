@@ -348,7 +348,7 @@ const CellEditor: React.FC<CellEditorProps> = ({
           ${cs.imageSrc ? 'cursor-grab active:cursor-grabbing' : ''}
           ${isSelected && cs.imageSrc ? 'ring-2 ring-inset ring-indigo-500' : ''}
           ${isDragOver ? 'ring-2 ring-inset ring-indigo-400' : ''}`}
-        style={{ background: 'rgba(15,23,42,0.9)' }}
+        style={{ background: 'rgba(15,23,42,0.9)', touchAction: 'none' }}
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
         onClick={() => cs.imageSrc && onSelect(idx)}
