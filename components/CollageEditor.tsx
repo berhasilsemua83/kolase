@@ -1,435 +1,186 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
-// =============================================
+// ─────────────────────────────────────────────
 // TYPES
-// =============================================
+// ─────────────────────────────────────────────
 interface CollageCell {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  clip?: string; // "x1 y1,x2 y2,..." tanpa %, dikonversi ke clipPath saat render
+  x: number; y: number; w: number; h: number;
+  clip?: string;
 }
-
 interface CollageLayout {
-  id: string;
-  name: string;
-  photoCount: number;
+  id: string; name: string; photoCount: number;
   category: 'kotak' | 'diagonal' | 'chevron' | 'gelombang';
   cells: CollageCell[];
 }
-
 interface CellState {
   imageSrc: string | null;
-  imgNaturalW: number;
-  imgNaturalH: number;
-  scale: number;
-  offsetX: number;
-  offsetY: number;
+  imgNaturalW: number; imgNaturalH: number;
+  scale: number; offsetX: number; offsetY: number;
 }
-
-
-// =============================================
-// LAYER TYPES (Teks & Stiker di atas foto)
-// =============================================
-interface BaseLayer {
-  id: string;
-  x: number;   // % dari canvas width (0-100)
-  y: number;   // % dari canvas height (0-100)
-  size: number; // px font/stiker
-  rotation: number; // derajat
+interface StagedPhoto {
+  imageSrc: string; imgNaturalW: number; imgNaturalH: number;
 }
-interface TextLayer extends BaseLayer {
-  kind: 'text';
-  text: string;
-  font: string;
-  color: string;
-  bold: boolean;
-  italic: boolean;
-  shadow: boolean;
-}
-interface StickerLayer extends BaseLayer {
-  kind: 'sticker';
-  symbol: string; // emoji / unicode
-}
+interface BaseLayer { id: string; x: number; y: number; size: number; rotation: number; }
+interface TextLayer  extends BaseLayer { kind: 'text';    text: string; font: string; color: string; bold: boolean; italic: boolean; shadow: boolean; }
+interface StickerLayer extends BaseLayer { kind: 'sticker'; symbol: string; }
 type Layer = TextLayer | StickerLayer;
 
+// ─────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────
 const FONTS = [
-  { id:'sans',    label:'Sans',     css:'Arial, sans-serif' },
-  { id:'serif',   label:'Serif',    css:'Georgia, serif' },
-  { id:'mono',    label:'Mono',     css:'"Courier New", monospace' },
-  { id:'rounded', label:'Rounded',  css:'"Trebuchet MS", sans-serif' },
-  { id:'display', label:'Display',  css:'Impact, fantasy' },
-  { id:'script',  label:'Script',   css:'"Palatino Linotype", cursive' },
+  { id:'sans',    label:'Sans',    css:'Arial, sans-serif' },
+  { id:'serif',   label:'Serif',   css:'Georgia, serif' },
+  { id:'mono',    label:'Mono',    css:'"Courier New", monospace' },
+  { id:'display', label:'Display', css:'Impact, fantasy' },
+  { id:'rounded', label:'Rounded', css:'"Trebuchet MS", sans-serif' },
+  { id:'script',  label:'Script',  css:'"Palatino Linotype", cursive' },
 ];
-
 const STICKERS = [
   { group:'Panah',   items:['→','←','↑','↓','↗','↙','↔','↕','➡','⬅','⬆','⬇','➜','➤','⇒'] },
   { group:'Hati',    items:['❤️','🧡','💛','💚','💙','💜','🖤','🤍','💕','💞','💓','💗','💖','💘','💝'] },
   { group:'Bintang', items:['⭐','🌟','✨','💫','⚡','🔥','💥','❄️','🌈','☀️','🌙','⚽','🎯','🏆','🎁'] },
-  { group:'Tanda',   items:['✅','❌','⚠️','❗','❓','💯','🔴','🟡','🟢','🔵','⬛','🟥','📍','📌','🎀'] },
+  { group:'Tanda',   items:['✅','❌','⚠️','❗','❓','💯','🔴','🟡','🟢','🔵','📍','📌','🎀','🏅','🎊'] },
   { group:'Wajah',   items:['😊','😂','🥰','😎','😍','🤩','👍','👎','👏','🙌','💪','🤞','✌️','🫶','🎉'] },
 ];
-
 const TEXT_COLORS = ['#ffffff','#000000','#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#a855f7','#ec4899','#06b6d4'];
-
-// =============================================
-// HELPER: konversi clip string ke CSS clipPath
-// Input:  "0 0,60 0,40 100,0 100"
-// Output: "polygon(0% 0%, 60% 0%, 40% 100%, 0% 100%)"
-// =============================================
-const toClip = (s: string) =>
-  `polygon(${s.split(',').map(p => p.trim().split(' ').join('% ') + '%').join(', ')})`;
-
-// =============================================
-// LAYOUTS
-// =============================================
-const COLLAGE_LAYOUTS: CollageLayout[] = [
-
-  // ──────────────── KOTAK ────────────────
-  // 2 foto
-  { id:'2_lr_50', name:'50/50 Kiri-Kanan',  category:'kotak', photoCount:2, cells:[{x:0,y:0,w:50,h:100},{x:50,y:0,w:50,h:100}] },
-  { id:'2_tb_50', name:'50/50 Atas-Bawah',  category:'kotak', photoCount:2, cells:[{x:0,y:0,w:100,h:50},{x:0,y:50,w:100,h:50}] },
-  { id:'2_lr_60', name:'60/40 Kiri-Kanan',  category:'kotak', photoCount:2, cells:[{x:0,y:0,w:60,h:100},{x:60,y:0,w:40,h:100}] },
-  { id:'2_lr_70', name:'70/30 Kiri-Kanan',  category:'kotak', photoCount:2, cells:[{x:0,y:0,w:70,h:100},{x:70,y:0,w:30,h:100}] },
-  { id:'2_tb_65', name:'65/35 Atas-Bawah',  category:'kotak', photoCount:2, cells:[{x:0,y:0,w:100,h:65},{x:0,y:65,w:100,h:35}] },
-  // 3 foto
-  { id:'3_1l_2r', name:'1 Besar Kiri + 2 Kanan',     category:'kotak', photoCount:3, cells:[{x:0,y:0,w:55,h:100},{x:55,y:0,w:45,h:50},{x:55,y:50,w:45,h:50}] },
-  { id:'3_2l_1r', name:'2 Kiri + 1 Besar Kanan',     category:'kotak', photoCount:3, cells:[{x:0,y:0,w:45,h:50},{x:0,y:50,w:45,h:50},{x:45,y:0,w:55,h:100}] },
-  { id:'3_1t_2b', name:'1 Besar Atas + 2 Bawah',     category:'kotak', photoCount:3, cells:[{x:0,y:0,w:100,h:55},{x:0,y:55,w:50,h:45},{x:50,y:55,w:50,h:45}] },
-  { id:'3_2t_1b', name:'2 Atas + 1 Besar Bawah',     category:'kotak', photoCount:3, cells:[{x:0,y:0,w:50,h:45},{x:50,y:0,w:50,h:45},{x:0,y:45,w:100,h:55}] },
-  { id:'3_asym',  name:'1 Kiri + 2 Kanan Asimetris', category:'kotak', photoCount:3, cells:[{x:0,y:0,w:50,h:100},{x:50,y:0,w:50,h:40},{x:50,y:40,w:50,h:60}] },
-  // 4 foto
-  { id:'4_grid',  name:'2x2 Grid Sama Rata',      category:'kotak', photoCount:4, cells:[{x:0,y:0,w:50,h:50},{x:50,y:0,w:50,h:50},{x:0,y:50,w:50,h:50},{x:50,y:50,w:50,h:50}] },
-  { id:'4_1l_3r', name:'1 Besar Kiri + 3 Kanan',  category:'kotak', photoCount:4, cells:[{x:0,y:0,w:55,h:100},{x:55,y:0,w:45,h:33.34},{x:55,y:33.34,w:45,h:33.33},{x:55,y:66.67,w:45,h:33.33}] },
-  { id:'4_3l_1r', name:'3 Kiri + 1 Besar Kanan',  category:'kotak', photoCount:4, cells:[{x:0,y:0,w:45,h:33.34},{x:0,y:33.34,w:45,h:33.33},{x:0,y:66.67,w:45,h:33.33},{x:45,y:0,w:55,h:100}] },
-  { id:'4_1t_3b', name:'1 Besar Atas + 3 Bawah',  category:'kotak', photoCount:4, cells:[{x:0,y:0,w:100,h:55},{x:0,y:55,w:33.34,h:45},{x:33.34,y:55,w:33.33,h:45},{x:66.67,y:55,w:33.33,h:45}] },
-  { id:'4_3t_1b', name:'3 Atas + 1 Besar Bawah',  category:'kotak', photoCount:4, cells:[{x:0,y:0,w:33.34,h:45},{x:33.34,y:0,w:33.33,h:45},{x:66.67,y:0,w:33.33,h:45},{x:0,y:45,w:100,h:55}] },
-  { id:'4_lg_sm', name:'1 Besar + 3 Strip Bawah',  category:'kotak', photoCount:4, cells:[{x:0,y:0,w:100,h:65},{x:0,y:65,w:33.34,h:35},{x:33.34,y:65,w:33.33,h:35},{x:66.67,y:65,w:33.33,h:35}] },
-  // 5 foto
-  { id:'5_1tl_4',   name:'1 Pojok Besar + 4 Kecil', category:'kotak', photoCount:5, cells:[{x:0,y:0,w:60,h:60},{x:60,y:0,w:40,h:30},{x:60,y:30,w:40,h:30},{x:0,y:60,w:50,h:40},{x:50,y:60,w:50,h:40}] },
-  { id:'5_2t_3b',   name:'2 Atas + 3 Bawah',        category:'kotak', photoCount:5, cells:[{x:0,y:0,w:50,h:50},{x:50,y:0,w:50,h:50},{x:0,y:50,w:33.34,h:50},{x:33.34,y:50,w:33.33,h:50},{x:66.67,y:50,w:33.33,h:50}] },
-  { id:'5_3t_2b',   name:'3 Atas + 2 Bawah',        category:'kotak', photoCount:5, cells:[{x:0,y:0,w:33.34,h:50},{x:33.34,y:0,w:33.33,h:50},{x:66.67,y:0,w:33.33,h:50},{x:0,y:50,w:50,h:50},{x:50,y:50,w:50,h:50}] },
-  { id:'5_1l_4r',   name:'1 Besar Kiri + 4 Kanan',  category:'kotak', photoCount:5, cells:[{x:0,y:0,w:50,h:100},{x:50,y:0,w:50,h:25},{x:50,y:25,w:50,h:25},{x:50,y:50,w:50,h:25},{x:50,y:75,w:50,h:25}] },
-  { id:'5_4l_1r',   name:'4 Kiri + 1 Besar Kanan',  category:'kotak', photoCount:5, cells:[{x:0,y:0,w:50,h:25},{x:0,y:25,w:50,h:25},{x:0,y:50,w:50,h:25},{x:0,y:75,w:50,h:25},{x:50,y:0,w:50,h:100}] },
-  { id:'5_cross',   name:'Pola Plus / Cross',        category:'kotak', photoCount:5, cells:[{x:33.33,y:0,w:33.34,h:33.33},{x:0,y:33.33,w:33.33,h:33.34},{x:33.33,y:33.33,w:33.34,h:33.34},{x:66.67,y:33.33,w:33.33,h:33.34},{x:33.33,y:66.67,w:33.34,h:33.33}] },
-  { id:'5_1c_4cor', name:'1 Tengah + 4 Sudut',      category:'kotak', photoCount:5, cells:[{x:25,y:25,w:50,h:50},{x:0,y:0,w:25,h:25},{x:75,y:0,w:25,h:25},{x:0,y:75,w:25,h:25},{x:75,y:75,w:25,h:25}] },
-  // 6 foto
-  { id:'6_2x3',  name:'6 - Grid 2x3',          category:'kotak', photoCount:6, cells:[{x:0,y:0,w:33.34,h:50},{x:33.34,y:0,w:33.33,h:50},{x:66.67,y:0,w:33.33,h:50},{x:0,y:50,w:33.34,h:50},{x:33.34,y:50,w:33.33,h:50},{x:66.67,y:50,w:33.33,h:50}] },
-  { id:'6_3x2',  name:'6 - Grid 3x2',          category:'kotak', photoCount:6, cells:[{x:0,y:0,w:50,h:33.34},{x:50,y:0,w:50,h:33.34},{x:0,y:33.34,w:50,h:33.33},{x:50,y:33.34,w:50,h:33.33},{x:0,y:66.67,w:50,h:33.33},{x:50,y:66.67,w:50,h:33.33}] },
-  { id:'6_1l5r', name:'6 - 1 Besar + 5 Strip',  category:'kotak', photoCount:6, cells:[{x:0,y:0,w:55,h:100},{x:55,y:0,w:45,h:20},{x:55,y:20,w:45,h:20},{x:55,y:40,w:45,h:20},{x:55,y:60,w:45,h:20},{x:55,y:80,w:45,h:20}] },
-
-  // ──────────────── DIAGONAL ────────────────
-  { id:'d2_slash', name:'2 Miring /',         category:'diagonal', photoCount:2, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,60 0,40 100,0 100' },
-    { x:0,y:0,w:100,h:100, clip:'60 0,100 0,100 100,40 100' },
-  ]},
-  { id:'d2_back',  name:'2 Miring \\',        category:'diagonal', photoCount:2, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,40 0,60 100,0 100' },
-    { x:0,y:0,w:100,h:100, clip:'40 0,100 0,100 100,60 100' },
-  ]},
-  { id:'d2_horiz', name:'2 Miring Horisontal',category:'diagonal', photoCount:2, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,100 0,100 40,0 60' },
-    { x:0,y:0,w:100,h:100, clip:'0 60,100 40,100 100,0 100' },
-  ]},
-  { id:'d3_strips',name:'3 Strip Diagonal',   category:'diagonal', photoCount:3, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,36 0,22 100,0 100' },
-    { x:0,y:0,w:100,h:100, clip:'36 0,70 0,56 100,22 100' },
-    { x:0,y:0,w:100,h:100, clip:'70 0,100 0,100 100,56 100' },
-  ]},
-  { id:'d4_strips',name:'4 Strip Diagonal',   category:'diagonal', photoCount:4, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,28 0,16 100,0 100' },
-    { x:0,y:0,w:100,h:100, clip:'28 0,53 0,41 100,16 100' },
-    { x:0,y:0,w:100,h:100, clip:'53 0,78 0,66 100,41 100' },
-    { x:0,y:0,w:100,h:100, clip:'78 0,100 0,100 100,66 100' },
-  ]},
-  { id:'d4_x',     name:'4 Segitiga X',       category:'diagonal', photoCount:4, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,100 0,50 50' },
-    { x:0,y:0,w:100,h:100, clip:'100 0,100 100,50 50' },
-    { x:0,y:0,w:100,h:100, clip:'0 100,100 100,50 50' },
-    { x:0,y:0,w:100,h:100, clip:'0 0,50 50,0 100' },
-  ]},
-  { id:'d3_fan',   name:'3 Kipas Pojok',      category:'diagonal', photoCount:3, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 100,0 0,100 0' },
-    { x:0,y:0,w:100,h:100, clip:'0 100,100 0,100 55,45 100' },
-    { x:0,y:0,w:100,h:100, clip:'0 100,45 100,100 55,100 100' },
-  ]},
-
-  // ──────────────── CHEVRON ────────────────
-  { id:'c2_right', name:'2 Panah →',    category:'chevron', photoCount:2, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,55 0,78 50,55 100,0 100' },
-    { x:0,y:0,w:100,h:100, clip:'55 0,100 0,100 100,55 100,78 50' },
-  ]},
-  { id:'c2_left',  name:'2 Panah ←',    category:'chevron', photoCount:2, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,45 0,22 50,45 100,0 100' },
-    { x:0,y:0,w:100,h:100, clip:'45 0,100 0,100 100,45 100,22 50' },
-  ]},
-  { id:'c2_v',     name:'2 Bentuk V',   category:'chevron', photoCount:2, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,100 0,50 60,0 100' },
-    { x:0,y:0,w:100,h:100, clip:'0 100,50 60,100 0,100 100' },
-  ]},
-  { id:'c3_right', name:'3 Chevron →',  category:'chevron', photoCount:3, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,28 0,50 50,28 100,0 100' },
-    { x:0,y:0,w:100,h:100, clip:'28 0,62 0,84 50,62 100,28 100,50 50' },
-    { x:0,y:0,w:100,h:100, clip:'62 0,100 0,100 100,62 100,84 50' },
-  ]},
-  { id:'c3_left',  name:'3 Chevron ←',  category:'chevron', photoCount:3, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,38 0,16 50,38 100,0 100' },
-    { x:0,y:0,w:100,h:100, clip:'38 0,72 0,50 50,72 100,38 100,16 50' },
-    { x:0,y:0,w:100,h:100, clip:'72 0,100 0,100 100,72 100,50 50' },
-  ]},
-  { id:'c4_chain', name:'4 Rantai →',   category:'chevron', photoCount:4, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,30 0,42 50,30 100,0 100' },
-    { x:0,y:0,w:100,h:100, clip:'30 0,55 0,67 50,55 100,30 100,42 50' },
-    { x:0,y:0,w:100,h:100, clip:'55 0,78 0,90 50,78 100,55 100,67 50' },
-    { x:0,y:0,w:100,h:100, clip:'78 0,100 0,100 100,78 100,90 50' },
-  ]},
-
-  // ──────────────── GELOMBANG ────────────────
-  { id:'g2_vert',  name:'2 Gelombang |', category:'gelombang', photoCount:2, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,46 0,50 8,55 17,57 25,55 33,50 42,45 50,43 58,46 67,52 75,54 83,52 92,48 100,0 100' },
-    { x:0,y:0,w:100,h:100, clip:'46 0,100 0,100 100,48 100,52 92,54 83,52 75,46 67,43 58,45 50,50 42,55 33,57 25,55 17,50 8' },
-  ]},
-  { id:'g2_horiz', name:'2 Gelombang —', category:'gelombang', photoCount:2, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,100 0,100 46,92 50,83 55,75 57,67 55,58 50,50 45,42 43,33 46,25 52,17 54,8 52,0 48' },
-    { x:0,y:0,w:100,h:100, clip:'0 48,8 52,17 54,25 52,33 46,42 43,50 45,58 50,67 55,75 57,83 55,92 50,100 46,100 100,0 100' },
-  ]},
-  { id:'g2_ripple',name:'2 Riak',        category:'gelombang', photoCount:2, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,100 0,100 35,88 38,75 46,63 54,50 58,38 54,25 46,13 38,0 35' },
-    { x:0,y:0,w:100,h:100, clip:'0 35,13 38,25 46,38 54,50 58,63 54,75 46,88 38,100 35,100 100,0 100' },
-  ]},
-  { id:'g3_zigzag',name:'3 Zigzag',      category:'gelombang', photoCount:3, cells:[
-    { x:0,y:0,w:100,h:100, clip:'0 0,33 0,36 17,30 33,36 50,30 67,36 83,33 100,0 100' },
-    { x:0,y:0,w:100,h:100, clip:'33 0,67 0,70 17,64 33,70 50,64 67,70 83,67 100,33 100,36 83,30 67,36 50,30 33,36 17' },
-    { x:0,y:0,w:100,h:100, clip:'67 0,100 0,100 100,67 100,70 83,64 67,70 50,64 33,70 17' },
-  ]},
-];
-
-// =============================================
-// CONSTANTS
-// =============================================
+const BG_PRESETS  = ['#000000','#ffffff','#1e293b','#0f0f0f','#4f46e5','#be185d','#b45309','#166534'];
 const ASPECT_OPTIONS = [
-  { value:'1:1',  label:'1:1',  sub:'Square' },
-  { value:'9:16', label:'9:16', sub:'Portrait' },
-  { value:'16:9', label:'16:9', sub:'Landscape' },
-  { value:'4:5',  label:'4:5',  sub:'Instagram' },
-  { value:'3:4',  label:'3:4',  sub:'Portrait' },
-  { value:'4:3',  label:'4:3',  sub:'Landscape' },
+  {v:'1:1',l:'1:1',s:'Square'},{v:'9:16',l:'9:16',s:'Portrait'},{v:'16:9',l:'16:9',s:'Landscape'},
+  {v:'4:5',l:'4:5',s:'Instagram'},{v:'3:4',l:'3:4',s:'Portrait'},{v:'4:3',l:'4:3',s:'Landscape'},
+];
+const CAT_LABELS: Record<string,string> = { kotak:'⬜ Kotak', diagonal:'↗ Diagonal', chevron:'❯ Chevron', gelombang:'〜 Gelombang' };
+const EMPTY_CELL = (): CellState => ({ imageSrc:null, imgNaturalW:0, imgNaturalH:0, scale:1, offsetX:0, offsetY:0 });
+const toClip = (s: string) => `polygon(${s.split(',').map(p=>p.trim().split(' ').join('% ')+'%').join(', ')})`;
+const calcMax = (iW:number,iH:number,cW:number,cH:number,s:number) => {
+  if(!iW||!iH) return {mx:1,my:1};
+  const cs=Math.min(cW/iW,cH/iH), vW=iW*cs*s, vH=iH*cs*s;
+  return { mx:((cW+vW)/2-vW*0.2)/(cW*s), my:((cH+vH)/2-vH*0.2)/(cH*s) };
+};
+
+// ─────────────────────────────────────────────
+// LAYOUTS
+// ─────────────────────────────────────────────
+const LAYOUTS: CollageLayout[] = [
+  {id:'k2a',name:'50/50 Kiri-Kanan',category:'kotak',photoCount:2,cells:[{x:0,y:0,w:50,h:100},{x:50,y:0,w:50,h:100}]},
+  {id:'k2b',name:'50/50 Atas-Bawah',category:'kotak',photoCount:2,cells:[{x:0,y:0,w:100,h:50},{x:0,y:50,w:100,h:50}]},
+  {id:'k2c',name:'60/40 Kiri-Kanan',category:'kotak',photoCount:2,cells:[{x:0,y:0,w:60,h:100},{x:60,y:0,w:40,h:100}]},
+  {id:'k2d',name:'70/30 Kiri-Kanan',category:'kotak',photoCount:2,cells:[{x:0,y:0,w:70,h:100},{x:70,y:0,w:30,h:100}]},
+  {id:'k3a',name:'1 Besar + 2 Kanan',category:'kotak',photoCount:3,cells:[{x:0,y:0,w:55,h:100},{x:55,y:0,w:45,h:50},{x:55,y:50,w:45,h:50}]},
+  {id:'k3b',name:'2 Kiri + 1 Besar',category:'kotak',photoCount:3,cells:[{x:0,y:0,w:45,h:50},{x:0,y:50,w:45,h:50},{x:45,y:0,w:55,h:100}]},
+  {id:'k3c',name:'1 Atas + 2 Bawah',category:'kotak',photoCount:3,cells:[{x:0,y:0,w:100,h:55},{x:0,y:55,w:50,h:45},{x:50,y:55,w:50,h:45}]},
+  {id:'k3d',name:'2 Atas + 1 Bawah',category:'kotak',photoCount:3,cells:[{x:0,y:0,w:50,h:45},{x:50,y:0,w:50,h:45},{x:0,y:45,w:100,h:55}]},
+  {id:'k4a',name:'2×2 Grid',category:'kotak',photoCount:4,cells:[{x:0,y:0,w:50,h:50},{x:50,y:0,w:50,h:50},{x:0,y:50,w:50,h:50},{x:50,y:50,w:50,h:50}]},
+  {id:'k4b',name:'1 Besar + 3 Kanan',category:'kotak',photoCount:4,cells:[{x:0,y:0,w:55,h:100},{x:55,y:0,w:45,h:33.34},{x:55,y:33.34,w:45,h:33.33},{x:55,y:66.67,w:45,h:33.33}]},
+  {id:'k4c',name:'1 Besar + 3 Bawah',category:'kotak',photoCount:4,cells:[{x:0,y:0,w:100,h:55},{x:0,y:55,w:33.34,h:45},{x:33.34,y:55,w:33.33,h:45},{x:66.67,y:55,w:33.33,h:45}]},
+  {id:'k5a',name:'2 Atas + 3 Bawah',category:'kotak',photoCount:5,cells:[{x:0,y:0,w:50,h:50},{x:50,y:0,w:50,h:50},{x:0,y:50,w:33.34,h:50},{x:33.34,y:50,w:33.33,h:50},{x:66.67,y:50,w:33.33,h:50}]},
+  {id:'k5b',name:'1 Besar + 4 Kanan',category:'kotak',photoCount:5,cells:[{x:0,y:0,w:50,h:100},{x:50,y:0,w:50,h:25},{x:50,y:25,w:50,h:25},{x:50,y:50,w:50,h:25},{x:50,y:75,w:50,h:25}]},
+  {id:'k5c',name:'Pola Plus',category:'kotak',photoCount:5,cells:[{x:33.33,y:0,w:33.34,h:33.33},{x:0,y:33.33,w:33.33,h:33.34},{x:33.33,y:33.33,w:33.34,h:33.34},{x:66.67,y:33.33,w:33.33,h:33.34},{x:33.33,y:66.67,w:33.34,h:33.33}]},
+  {id:'k6a',name:'Grid 2×3',category:'kotak',photoCount:6,cells:[{x:0,y:0,w:33.34,h:50},{x:33.34,y:0,w:33.33,h:50},{x:66.67,y:0,w:33.33,h:50},{x:0,y:50,w:33.34,h:50},{x:33.34,y:50,w:33.33,h:50},{x:66.67,y:50,w:33.33,h:50}]},
+  {id:'k6b',name:'Grid 3×2',category:'kotak',photoCount:6,cells:[{x:0,y:0,w:50,h:33.34},{x:50,y:0,w:50,h:33.34},{x:0,y:33.34,w:50,h:33.33},{x:50,y:33.34,w:50,h:33.33},{x:0,y:66.67,w:50,h:33.33},{x:50,y:66.67,w:50,h:33.33}]},
+  {id:'d2a',name:'2 Miring /',category:'diagonal',photoCount:2,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,60 0,40 100,0 100'},{x:0,y:0,w:100,h:100,clip:'60 0,100 0,100 100,40 100'}]},
+  {id:'d2b',name:'2 Miring \\',category:'diagonal',photoCount:2,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,40 0,60 100,0 100'},{x:0,y:0,w:100,h:100,clip:'40 0,100 0,100 100,60 100'}]},
+  {id:'d2c',name:'2 Miring —',category:'diagonal',photoCount:2,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,100 0,100 40,0 60'},{x:0,y:0,w:100,h:100,clip:'0 60,100 40,100 100,0 100'}]},
+  {id:'d3a',name:'3 Strip Diagonal',category:'diagonal',photoCount:3,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,36 0,22 100,0 100'},{x:0,y:0,w:100,h:100,clip:'36 0,70 0,56 100,22 100'},{x:0,y:0,w:100,h:100,clip:'70 0,100 0,100 100,56 100'}]},
+  {id:'d4a',name:'4 Strip Diagonal',category:'diagonal',photoCount:4,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,28 0,16 100,0 100'},{x:0,y:0,w:100,h:100,clip:'28 0,53 0,41 100,16 100'},{x:0,y:0,w:100,h:100,clip:'53 0,78 0,66 100,41 100'},{x:0,y:0,w:100,h:100,clip:'78 0,100 0,100 100,66 100'}]},
+  {id:'d4b',name:'4 Segitiga X',category:'diagonal',photoCount:4,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,100 0,50 50'},{x:0,y:0,w:100,h:100,clip:'100 0,100 100,50 50'},{x:0,y:0,w:100,h:100,clip:'0 100,100 100,50 50'},{x:0,y:0,w:100,h:100,clip:'0 0,50 50,0 100'}]},
+  {id:'c2a',name:'2 Panah →',category:'chevron',photoCount:2,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,55 0,78 50,55 100,0 100'},{x:0,y:0,w:100,h:100,clip:'55 0,100 0,100 100,55 100,78 50'}]},
+  {id:'c2b',name:'2 Panah ←',category:'chevron',photoCount:2,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,45 0,22 50,45 100,0 100'},{x:0,y:0,w:100,h:100,clip:'45 0,100 0,100 100,45 100,22 50'}]},
+  {id:'c2c',name:'2 Bentuk V',category:'chevron',photoCount:2,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,100 0,50 60,0 100'},{x:0,y:0,w:100,h:100,clip:'0 100,50 60,100 0,100 100'}]},
+  {id:'c3a',name:'3 Chevron →',category:'chevron',photoCount:3,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,28 0,50 50,28 100,0 100'},{x:0,y:0,w:100,h:100,clip:'28 0,62 0,84 50,62 100,28 100,50 50'},{x:0,y:0,w:100,h:100,clip:'62 0,100 0,100 100,62 100,84 50'}]},
+  {id:'c4a',name:'4 Rantai →',category:'chevron',photoCount:4,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,30 0,42 50,30 100,0 100'},{x:0,y:0,w:100,h:100,clip:'30 0,55 0,67 50,55 100,30 100,42 50'},{x:0,y:0,w:100,h:100,clip:'55 0,78 0,90 50,78 100,55 100,67 50'},{x:0,y:0,w:100,h:100,clip:'78 0,100 0,100 100,78 100,90 50'}]},
+  {id:'g2a',name:'2 Gelombang |',category:'gelombang',photoCount:2,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,46 0,50 8,55 17,57 25,55 33,50 42,45 50,43 58,46 67,52 75,54 83,52 92,48 100,0 100'},{x:0,y:0,w:100,h:100,clip:'46 0,100 0,100 100,48 100,52 92,54 83,52 75,46 67,43 58,45 50,50 42,55 33,57 25,55 17,50 8'}]},
+  {id:'g2b',name:'2 Gelombang —',category:'gelombang',photoCount:2,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,100 0,100 46,92 50,83 55,75 57,67 55,58 50,50 45,42 43,33 46,25 52,17 54,8 52,0 48'},{x:0,y:0,w:100,h:100,clip:'0 48,8 52,17 54,25 52,33 46,42 43,50 45,58 50,67 55,75 57,83 55,92 50,100 46,100 100,0 100'}]},
+  {id:'g3a',name:'3 Zigzag',category:'gelombang',photoCount:3,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,33 0,36 17,30 33,36 50,30 67,36 83,33 100,0 100'},{x:0,y:0,w:100,h:100,clip:'33 0,67 0,70 17,64 33,70 50,64 67,70 83,67 100,33 100,36 83,30 67,36 50,30 33,36 17'},{x:0,y:0,w:100,h:100,clip:'67 0,100 0,100 100,67 100,70 83,64 67,70 50,64 33,70 17'}]},
+  {id:'g2c',name:'2 Riak',category:'gelombang',photoCount:2,cells:[{x:0,y:0,w:100,h:100,clip:'0 0,100 0,100 35,88 38,75 46,63 54,50 58,38 54,25 46,13 38,0 35'},{x:0,y:0,w:100,h:100,clip:'0 35,13 38,25 46,38 54,50 58,63 54,75 46,88 38,100 35,100 100,0 100'}]},
 ];
 
-const BG_PRESETS = ['#000000','#ffffff','#1e293b','#0f0f0f','#4f46e5','#be185d','#b45309','#166534'];
+// ─────────────────────────────────────────────
+// CELL EDITOR  
+// ─────────────────────────────────────────────
+const CellEditor: React.FC<{
+  cs: CellState; idx: number; isDragOver: boolean; isSelected: boolean;
+  onSelect(i:number):void; onUpdate(i:number,p:Partial<CellState>):void;
+  onUpload(i:number,f:File):void; onRemove(i:number):void;
+  onDragOver(e:React.DragEvent,i:number):void; onDragLeave():void; onDrop(e:React.DragEvent,i:number):void;
+}> = ({ cs,idx,isDragOver,isSelected,onSelect,onUpdate,onUpload,onRemove,onDragOver,onDragLeave,onDrop }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+  const pinching = useRef(false);
+  const pinchStart = useRef({dist:0,scale:1,ox:0,oy:0});
+  const touchRef = useRef({x:0,y:0,ox:0,oy:0});
 
-const CATEGORY_LABELS: Record<string, string> = {
-  kotak: '⬜ Kotak', diagonal: '↗ Diagonal', chevron: '❯ Chevron', gelombang: '〜 Gelombang',
-};
+  const dist = (t:React.TouchList) => Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);
 
-const DEFAULT_CELL = (): CellState => ({
-  imageSrc: null, imgNaturalW: 0, imgNaturalH: 0, scale: 1, offsetX: 0, offsetY: 0,
-});
-
-// =============================================
-// HELPER: batas pan bebas
-// =============================================
-const calcMaxOffset = (
-  imgW: number, imgH: number, cellW: number, cellH: number, scale: number
-): { maxOffX: number; maxOffY: number } => {
-  if (imgW <= 0 || imgH <= 0) return { maxOffX: 1, maxOffY: 1 };
-  const containScale = Math.min(cellW / imgW, cellH / imgH);
-  const visW = imgW * containScale * scale;
-  const visH = imgH * containScale * scale;
-  const maxPanX = (cellW + visW) / 2 - visW * 0.2;
-  const maxPanY = (cellH + visH) / 2 - visH * 0.2;
-  return {
-    maxOffX: maxPanX / (cellW * scale),
-    maxOffY: maxPanY / (cellH * scale),
-  };
-};
-
-// =============================================
-// CELL EDITOR — tidak berubah dari versi awal
-// =============================================
-interface CellEditorProps {
-  cs: CellState; idx: number;
-  isDragOver: boolean; isSelected: boolean;
-  onSelect: (i: number) => void;
-  onUpdate: (i: number, patch: Partial<CellState>) => void;
-  onUpload: (i: number, file: File) => void;
-  onRemove: (i: number) => void;
-  onDragOver: (e: React.DragEvent, i: number) => void;
-  onDragLeave: () => void;
-  onDrop: (e: React.DragEvent, i: number) => void;
-}
-
-const CellEditor: React.FC<CellEditorProps> = ({
-  cs, idx, isDragOver, isSelected,
-  onSelect, onUpdate, onUpload, onRemove,
-  onDragOver, onDragLeave, onDrop,
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const isDragging   = useRef(false);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (!cs.imageSrc) return;
-    e.preventDefault();
-    onSelect(idx);
-    isDragging.current = true;
-    const startX = e.clientX, startY = e.clientY;
-    const startOffX = cs.offsetX, startOffY = cs.offsetY;
-    const onMove = (ev: MouseEvent) => {
-      if (!isDragging.current || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const cellW = rect.width, cellH = rect.height, s = cs.scale;
-      const { maxOffX, maxOffY } = calcMaxOffset(cs.imgNaturalW, cs.imgNaturalH, cellW, cellH, s);
-      onUpdate(idx, {
-        offsetX: Math.max(-maxOffX, Math.min(maxOffX, startOffX + (ev.clientX - startX) / (cellW * s))),
-        offsetY: Math.max(-maxOffY, Math.min(maxOffY, startOffY + (ev.clientY - startY) / (cellH * s))),
-      });
+  const onMD = (e:React.MouseEvent) => {
+    if(!cs.imageSrc) return; e.preventDefault(); onSelect(idx); dragging.current=true;
+    const sx=e.clientX,sy=e.clientY,ox=cs.offsetX,oy=cs.offsetY;
+    const mv=(ev:MouseEvent)=>{
+      if(!dragging.current||!ref.current) return;
+      const r=ref.current.getBoundingClientRect(),s=cs.scale;
+      const {mx,my}=calcMax(cs.imgNaturalW,cs.imgNaturalH,r.width,r.height,s);
+      onUpdate(idx,{offsetX:Math.max(-mx,Math.min(mx,ox+(ev.clientX-sx)/(r.width*s))),offsetY:Math.max(-my,Math.min(my,oy+(ev.clientY-sy)/(r.height*s)))});
     };
-    const onUp = () => {
-      isDragging.current = false;
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    const up=()=>{dragging.current=false;window.removeEventListener('mousemove',mv);window.removeEventListener('mouseup',up);};
+    window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
   };
 
-  // ── State untuk touch (1 jari = drag, 2 jari = pinch zoom) ──
-  const touchStart   = useRef({ x: 0, y: 0, offX: 0, offY: 0 });
-  const pinchStart   = useRef({ dist: 0, scale: 1, midX: 0, midY: 0, offX: 0, offY: 0 });
-  const isPinching   = useRef(false);
-
-  const getTouchDist = (t: React.TouchList) =>
-    Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-  const getTouchMid  = (t: React.TouchList) => ({
-    x: (t[0].clientX + t[1].clientX) / 2,
-    y: (t[0].clientY + t[1].clientY) / 2,
-  });
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (!cs.imageSrc) return;
-    e.preventDefault();
-    onSelect(idx);
-
-    if (e.touches.length === 2) {
-      // Pinch start
-      isPinching.current  = true;
-      isDragging.current  = false;
-      pinchStart.current  = {
-        dist:  getTouchDist(e.touches),
-        scale: cs.scale,
-        midX:  getTouchMid(e.touches).x,
-        midY:  getTouchMid(e.touches).y,
-        offX:  cs.offsetX,
-        offY:  cs.offsetY,
-      };
-    } else if (e.touches.length === 1 && !isPinching.current) {
-      // 1 jari drag
-      isDragging.current = true;
-      touchStart.current = {
-        x: e.touches[0].clientX, y: e.touches[0].clientY,
-        offX: cs.offsetX, offY: cs.offsetY,
-      };
+  const onTS = (e:React.TouchEvent) => {
+    if(!cs.imageSrc) return;
+    e.preventDefault(); onSelect(idx);
+    if(e.touches.length===2){
+      pinching.current=true; dragging.current=false;
+      pinchStart.current={dist:dist(e.touches),scale:cs.scale,ox:cs.offsetX,oy:cs.offsetY};
+    } else if(e.touches.length===1&&!pinching.current){
+      dragging.current=true;
+      touchRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY,ox:cs.offsetX,oy:cs.offsetY};
     }
   };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!cs.imageSrc || !containerRef.current) return;
-    e.preventDefault();
-    const rect  = containerRef.current.getBoundingClientRect();
-    const cellW = rect.width, cellH = rect.height;
-
-    if (e.touches.length === 2 && isPinching.current) {
-      // ── Pinch zoom ──
-      const newDist  = getTouchDist(e.touches);
-      const ratio    = newDist / pinchStart.current.dist;
-      const newScale = Math.max(0.3, Math.min(3, pinchStart.current.scale * ratio));
-      const { maxOffX, maxOffY } = calcMaxOffset(cs.imgNaturalW, cs.imgNaturalH, cellW, cellH, newScale);
-      onUpdate(idx, {
-        scale:   newScale,
-        offsetX: Math.max(-maxOffX, Math.min(maxOffX, pinchStart.current.offX)),
-        offsetY: Math.max(-maxOffY, Math.min(maxOffY, pinchStart.current.offY)),
-      });
-    } else if (e.touches.length === 1 && isDragging.current && !isPinching.current) {
-      // ── 1 jari drag ──
-      const s = cs.scale;
-      const { maxOffX, maxOffY } = calcMaxOffset(cs.imgNaturalW, cs.imgNaturalH, cellW, cellH, s);
-      onUpdate(idx, {
-        offsetX: Math.max(-maxOffX, Math.min(maxOffX, touchStart.current.offX + (e.touches[0].clientX - touchStart.current.x) / (cellW * s))),
-        offsetY: Math.max(-maxOffY, Math.min(maxOffY, touchStart.current.offY + (e.touches[0].clientY - touchStart.current.y) / (cellH * s))),
-      });
+  const onTM = (e:React.TouchEvent) => {
+    if(!cs.imageSrc||!ref.current) return; e.preventDefault();
+    const r=ref.current.getBoundingClientRect();
+    if(e.touches.length===2&&pinching.current){
+      const ratio=dist(e.touches)/pinchStart.current.dist;
+      const ns=Math.max(0.3,Math.min(3,pinchStart.current.scale*ratio));
+      const {mx,my}=calcMax(cs.imgNaturalW,cs.imgNaturalH,r.width,r.height,ns);
+      onUpdate(idx,{scale:ns,offsetX:Math.max(-mx,Math.min(mx,pinchStart.current.ox)),offsetY:Math.max(-my,Math.min(my,pinchStart.current.oy))});
+    } else if(e.touches.length===1&&dragging.current&&!pinching.current){
+      const s=cs.scale,{mx,my}=calcMax(cs.imgNaturalW,cs.imgNaturalH,r.width,r.height,s);
+      onUpdate(idx,{offsetX:Math.max(-mx,Math.min(mx,touchRef.current.ox+(e.touches[0].clientX-touchRef.current.x)/(r.width*s))),offsetY:Math.max(-my,Math.min(my,touchRef.current.oy+(e.touches[0].clientY-touchRef.current.y)/(r.height*s)))});
     }
   };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (e.touches.length < 2) isPinching.current = false;
-    if (e.touches.length === 0) isDragging.current = false;
-    // Jika dari pinch kembali ke 1 jari, reset drag start dari posisi sekarang
-    if (e.touches.length === 1 && !isPinching.current) {
-      isDragging.current = true;
-      touchStart.current = {
-        x: e.touches[0].clientX, y: e.touches[0].clientY,
-        offX: cs.offsetX, offY: cs.offsetY,
-      };
+  const onTE = (e:React.TouchEvent) => {
+    if(e.touches.length<2) pinching.current=false;
+    if(e.touches.length===0) dragging.current=false;
+    if(e.touches.length===1&&!pinching.current){
+      dragging.current=true;
+      touchRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY,ox:cs.offsetX,oy:cs.offsetY};
     }
-  };
-
-  const getImgStyle = (): React.CSSProperties => {
-    if (!cs.imageSrc) return { display: 'none' };
-    return {
-      display: 'block', width: '100%', height: '100%',
-      objectFit: 'contain' as const, objectPosition: 'center',
-      transformOrigin: 'center center',
-      transform: `scale(${cs.scale}) translate(${cs.offsetX * 100}%, ${cs.offsetY * 100}%)`,
-      userSelect: 'none' as const, pointerEvents: 'none' as const, willChange: 'transform',
-    };
   };
 
   return (
-    <div className="relative w-full h-full"
-      onDragOver={e => onDragOver(e, idx)} onDragLeave={onDragLeave} onDrop={e => onDrop(e, idx)}>
-      <div ref={containerRef}
-        className={`relative w-full h-full overflow-hidden group
-          ${cs.imageSrc ? 'cursor-grab active:cursor-grabbing' : ''}
-          ${isSelected && cs.imageSrc ? 'ring-2 ring-inset ring-indigo-500' : ''}
-          ${isDragOver ? 'ring-2 ring-inset ring-indigo-400' : ''}`}
-        style={{ background: 'rgba(15,23,42,0.9)', touchAction: 'none' }}
-        onMouseDown={handleMouseDown}
-        onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
-        onClick={() => cs.imageSrc && onSelect(idx)}
-      >
+    <div className="relative w-full h-full" onDragOver={e=>onDragOver(e,idx)} onDragLeave={onDragLeave} onDrop={e=>onDrop(e,idx)}>
+      <div ref={ref}
+        className={`relative w-full h-full overflow-hidden group ${cs.imageSrc?'cursor-grab active:cursor-grabbing':''} ${isSelected&&cs.imageSrc?'ring-2 ring-inset ring-indigo-400':''} ${isDragOver?'ring-2 ring-inset ring-indigo-300':''}`}
+        style={{background:'rgba(15,23,42,0.9)',touchAction:'none'}}
+        onMouseDown={onMD} onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}
+        onClick={()=>cs.imageSrc&&onSelect(idx)}>
         {cs.imageSrc ? (
           <>
-            <img src={cs.imageSrc} alt="" draggable={false} style={getImgStyle()} />
-            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-start justify-between p-1 pointer-events-none group-hover:pointer-events-auto">
-              <span className="text-[9px] font-bold bg-indigo-600 text-white w-4 h-4 rounded-full flex items-center justify-center">{idx + 1}</span>
-              <button type="button" onClick={e => { e.stopPropagation(); onRemove(idx); }}
-                className="w-5 h-5 bg-red-600/90 hover:bg-red-500 text-white rounded text-xs flex items-center justify-center">✕</button>
+            <img src={cs.imageSrc} alt="" draggable={false} style={{display:'block',width:'100%',height:'100%',objectFit:'contain',objectPosition:'center',transformOrigin:'center',transform:`scale(${cs.scale}) translate(${cs.offsetX*100}%,${cs.offsetY*100}%)`,userSelect:'none',pointerEvents:'none',willChange:'transform'}}/>
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-between p-1 pointer-events-none group-hover:pointer-events-auto">
+              <span className="text-[9px] font-bold bg-indigo-600 text-white w-4 h-4 rounded-full flex items-center justify-center">{idx+1}</span>
+              <button type="button" onClick={e=>{e.stopPropagation();onRemove(idx);}} className="w-5 h-5 bg-red-600/90 hover:bg-red-500 text-white rounded text-xs flex items-center justify-center">✕</button>
             </div>
-            <div className="absolute bottom-1 left-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-              <span className="text-[8px] text-white/80 bg-black/60 px-1 py-0.5 rounded font-mono">{(cs.scale * 100).toFixed(0)}%</span>
-            </div>
-            {isSelected && (
-              <div className="absolute bottom-1 right-1 pointer-events-none">
-                <span className="text-[8px] text-white/70 bg-black/60 px-1 py-0.5 rounded">✋ geser</span>
-              </div>
-            )}
+            <span className="absolute bottom-1 left-1 text-[8px] text-white/70 bg-black/50 px-1 rounded opacity-0 group-hover:opacity-100">{(cs.scale*100).toFixed(0)}%</span>
           </>
         ) : isDragOver ? (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-1">
-            <svg className="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v8"/>
-            </svg>
-            <span className="text-[10px] text-indigo-300 font-bold">Lepaskan!</span>
-          </div>
+          <div className="w-full h-full flex items-center justify-center text-[10px] text-indigo-300 font-bold">Lepaskan!</div>
         ) : (
-          <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer hover:bg-slate-700/30 transition-colors">
-            <input type="file" accept="image/*" className="hidden"
-              onChange={e => { if (e.target.files?.[0]) { onUpload(idx, e.target.files[0]); onSelect(idx); } e.target.value = ''; }} />
-            <svg className="w-4 h-4 text-slate-500 mb-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4"/>
-            </svg>
-            <span className="text-[9px] text-slate-500">Foto {idx + 1}</span>
+          <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer hover:bg-slate-700/30">
+            <input type="file" accept="image/*" className="hidden" onChange={e=>{if(e.target.files?.[0]){onUpload(idx,e.target.files[0]);onSelect(idx);}e.target.value='';}}/>
+            <svg className="w-4 h-4 text-slate-500 mb-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4"/></svg>
+            <span className="text-[9px] text-slate-500">Foto {idx+1}</span>
           </label>
         )}
       </div>
@@ -437,1116 +188,606 @@ const CellEditor: React.FC<CellEditorProps> = ({
   );
 };
 
-// =============================================
-// TEXT FORM — sub-component terpisah agar state-nya
-// tidak terpengaruh re-render CollageEditor
-// =============================================
-interface TextFormProps {
-  onAdd: (layer: TextLayer) => void;
-}
-const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
-  const [text, setText]     = useState('');
-  const [font, setFont]     = useState('sans');
-  const [color, setColor]   = useState('#ffffff');
-  const [size, setSize]     = useState(40);
-  const [bold, setBold]     = useState(false);
+// ─────────────────────────────────────────────
+// TEXT FORM — state lokal, tidak terpengaruh re-render parent
+// ─────────────────────────────────────────────
+const TextForm: React.FC<{ onAdd:(l:TextLayer)=>void }> = ({ onAdd }) => {
+  const [text,   setText  ] = useState('');
+  const [font,   setFont  ] = useState('sans');
+  const [color,  setColor ] = useState('#ffffff');
+  const [size,   setSize  ] = useState(40);
+  const [bold,   setBold  ] = useState(false);
   const [italic, setItalic] = useState(false);
   const [shadow, setShadow] = useState(true);
 
-  const handleAdd = () => {
+  const submit = () => {
     const t = text.trim();
     if (!t) return;
-    onAdd({
-      kind: 'text', id: `t_${Date.now()}`,
-      text: t, font, color, size, bold, italic, shadow,
-      x: 50, y: 50, rotation: 0,
-    });
+    onAdd({ kind:'text', id:`t_${Date.now()}`, text:t, font, color, size, bold, italic, shadow, x:50, y:50, rotation:0 });
     setText('');
   };
 
   return (
-    <div className="p-3 space-y-3">
+    <div className="p-3 space-y-3" onMouseDown={e => e.stopPropagation()}>
       <div>
         <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
         <input
           type="text"
           value={text}
           onChange={e => setText(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }}}
-          placeholder="Ketik teks..."
+          onKeyDown={e => e.key === 'Enter' && submit()}
+          placeholder="Ketik teks di sini..."
           className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
         />
       </div>
-
       <div>
         <label className="block text-[10px] text-slate-400 mb-1">Font</label>
         <div className="grid grid-cols-3 gap-1">
-          {FONTS.map(f => (
-            <button key={f.id} type="button" onClick={() => setFont(f.id)}
-              className={`py-1.5 px-2 rounded-lg text-xs border truncate transition-colors ${font === f.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:border-indigo-500/50'}`}
-              style={{ fontFamily: f.css }}>
-              {f.label}
-            </button>
+          {FONTS.map(f=>(
+            <button key={f.id} type="button" onClick={()=>setFont(f.id)}
+              className={`py-1.5 px-2 rounded-lg text-xs border truncate ${font===f.id?'bg-indigo-600 border-indigo-500 text-white':'bg-slate-700/60 border-slate-600 text-slate-300'}`}
+              style={{fontFamily:f.css}}>{f.label}</button>
           ))}
         </div>
       </div>
-
       <div>
         <label className="block text-[10px] text-slate-400 mb-1">Warna</label>
         <div className="flex gap-1.5 flex-wrap">
-          {TEXT_COLORS.map(c => (
-            <button key={c} type="button" onClick={() => setColor(c)}
-              className={`w-6 h-6 rounded-full border-2 transition-all ${color === c ? 'border-white scale-125' : 'border-slate-600 hover:scale-110'}`}
-              style={{ background: c }}/>
+          {TEXT_COLORS.map(c=>(
+            <button key={c} type="button" onClick={()=>setColor(c)}
+              className={`w-6 h-6 rounded-full border-2 ${color===c?'border-white scale-125':'border-slate-600'}`}
+              style={{background:c}}/>
           ))}
-          <label className="w-6 h-6 rounded-full border-2 border-slate-500 overflow-hidden cursor-pointer" style={{ background: color }}>
-            <input type="color" value={color} onChange={e => setColor(e.target.value)} className="opacity-0 w-0 h-0"/>
+          <label className="w-6 h-6 rounded-full border-2 border-slate-500 overflow-hidden cursor-pointer" style={{background:color}}>
+            <input type="color" value={color} onChange={e=>setColor(e.target.value)} className="opacity-0 w-0 h-0"/>
           </label>
         </div>
       </div>
-
       <div className="flex items-center gap-3">
         <div className="flex-1">
           <label className="block text-[10px] text-slate-400 mb-1">Ukuran: {size}px</label>
-          <input type="range" min={12} max={120} value={size} onChange={e => setSize(Number(e.target.value))}
+          <input type="range" min={12} max={120} value={size} onChange={e=>setSize(+e.target.value)}
             className="w-full h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
         </div>
         <div className="flex gap-1 pt-4">
-          <button type="button" onClick={() => setBold(v => !v)}
-            className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${bold ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>B</button>
-          <button type="button" onClick={() => setItalic(v => !v)}
-            className={`w-8 h-8 rounded-lg text-sm italic transition-colors ${italic ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>I</button>
-          <button type="button" onClick={() => setShadow(v => !v)}
-            className={`w-8 h-8 rounded-lg text-sm transition-colors ${shadow ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>S</button>
+          <button type="button" onClick={()=>setBold(v=>!v)} className={`w-8 h-8 rounded-lg text-sm font-bold ${bold?'bg-indigo-600 text-white':'bg-slate-700 text-slate-400'}`}>B</button>
+          <button type="button" onClick={()=>setItalic(v=>!v)} className={`w-8 h-8 rounded-lg text-sm italic ${italic?'bg-indigo-600 text-white':'bg-slate-700 text-slate-400'}`}>I</button>
+          <button type="button" onClick={()=>setShadow(v=>!v)} className={`w-8 h-8 rounded-lg text-sm ${shadow?'bg-indigo-600 text-white':'bg-slate-700 text-slate-400'}`}>S</button>
         </div>
       </div>
-
-      {/* Preview */}
-      <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[44px] flex items-center justify-center overflow-hidden">
-        <span style={{
-          fontFamily: FONTS.find(f => f.id === font)?.css,
-          color, fontSize: `${Math.min(size, 36)}px`,
-          fontWeight: bold ? 'bold' : 'normal',
-          fontStyle: italic ? 'italic' : 'normal',
-          textShadow: shadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
-        }}>
-          {text || 'Preview Teks'}
+      <div className="bg-slate-900 rounded-lg p-2 min-h-[44px] flex items-center justify-center overflow-hidden">
+        <span style={{fontFamily:FONTS.find(f=>f.id===font)?.css,color,fontSize:`${Math.min(size,36)}px`,fontWeight:bold?'bold':'normal',fontStyle:italic?'italic':'normal',textShadow:shadow?'1px 1px 3px rgba(0,0,0,0.8)':'none'}}>
+          {text||'Preview Teks'}
         </span>
       </div>
-
-      <button type="button" onClick={handleAdd} disabled={!text.trim()}
-        className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors">
+      <button type="button" onClick={submit} disabled={!text.trim()}
+        className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-semibold">
         + Tambah ke Kolase
       </button>
     </div>
   );
 };
 
-// =============================================
+// ─────────────────────────────────────────────
 // MAIN COMPONENT
-// =============================================
-
-// Tipe foto yang di-staging (bebas dari layout)
-interface StagedPhoto {
-  imageSrc: string;
-  imgNaturalW: number;
-  imgNaturalH: number;
-}
-
+// ─────────────────────────────────────────────
 const CollageEditor: React.FC = () => {
-  // ── Staging: foto dulu, layout menyesuaikan ──
-  const [staged, setStaged]             = useState<(StagedPhoto | null)[]>([null, null]);
-  const [selectedLayout, setSelectedLayout] = useState<CollageLayout | null>(null);
-  const [cells, setCells]               = useState<CellState[]>([]);
+  const [staged,   setStaged  ] = useState<(StagedPhoto|null)[]>([null,null]);
+  const [layout,   setLayout  ] = useState<CollageLayout|null>(null);
+  const [cells,    setCells   ] = useState<CellState[]>([]);
+  const [layers,   setLayers  ] = useState<Layer[]>([]);
+  const [selLayer, setSelLayer] = useState<string|null>(null);
+  const [activeTab,setActiveTab] = useState<'teks'|'stiker'>('teks');
+  const [stickerGrp,setStickerGrp] = useState('Panah');
 
-  const [aspectRatio, setAspectRatio]   = useState('1:1');
-  const [gap, setGap]                   = useState(4);
-  const [bgColor, setBgColor]           = useState('#000000');
-  const [filterCat, setFilterCat]       = useState<string | null>(null);
-  const [isExporting, setIsExporting]   = useState(false);
-  const [dragOverStaged, setDragOverStaged] = useState<number | null>(null);
-  const [dragOverCell, setDragOverCell] = useState<number | null>(null);
-  const [selectedCell, setSelectedCell] = useState<number | null>(null);
+  const [ar,     setAr    ] = useState('1:1');
+  const [gap,    setGap   ] = useState(4);
+  const [bg,     setBg    ] = useState('#000000');
+  const [catF,   setCatF  ] = useState<string|null>(null);
+  const [exporting,setExporting] = useState(false);
+  const [dropOver, setDropOver ] = useState<number|null>(null);
+  const [selCell,  setSelCell  ] = useState<number|null>(null);
+  const [dropStaged,setDropStaged] = useState<number|null>(null);
 
-  // ── Layers: teks & stiker ──
-  const [layers, setLayers]             = useState<Layer[]>([]);
-  const [selectedLayer, setSelectedLayer] = useState<string | null>(null);
-  const [activeTab, setActiveTab]       = useState<'foto'|'teks'|'stiker'>('foto');
-  // Form teks baru — pakai state biasa, ref untuk baca nilai terkini di addTextLayer
-  const [newText, setNewText]           = useState('');
-  const [newFont, setNewFont]           = useState('sans');
-  const [newColor, setNewColor]         = useState('#ffffff');
-  const [newSize, setNewSize]           = useState(40);
-  const [newBold, setNewBold]           = useState(false);
-  const [newItalic, setNewItalic]       = useState(false);
-  const [newShadow, setNewShadow]       = useState(true);
-  const [showStickerGroup, setShowStickerGroup] = useState('Panah');
-  // Ref untuk selalu baca nilai terkini tanpa stale closure
-  const textFormRef = useRef({ text:'', font:'sans', color:'#ffffff', size:40, bold:false, italic:false, shadow:true });
   const previewRef = useRef<HTMLDivElement>(null);
-  const inputRef   = useRef<HTMLInputElement>(null);  // uncontrolled input
+  const layerDragRef = useRef<{id:string;sx:number;sy:number;ox:number;oy:number}|null>(null);
 
-  // Jumlah foto yang sudah diisi di staging
-  const filledCount = staged.filter(s => s !== null).length;
+  const filledCount = staged.filter(Boolean).length;
 
-  // Layout yang cocok = photoCount === filledCount (hanya tampil jika ada foto)
-  const matchingLayouts = filledCount > 0
-    ? COLLAGE_LAYOUTS.filter(l =>
-        l.photoCount === filledCount &&
-        (filterCat === null || l.category === filterCat)
-      )
-    : [];
-
-  // Saat layout dipilih: distribusi foto staging ke cells
-  const handleSelectLayout = useCallback((layout: CollageLayout) => {
-    setSelectedLayout(layout);
-    setSelectedCell(null);
-    const newCells: CellState[] = layout.cells.map((_, i) => {
-      const s = staged[i];
-      if (s) return { imageSrc: s.imageSrc, imgNaturalW: s.imgNaturalW, imgNaturalH: s.imgNaturalH, scale: 1, offsetX: 0, offsetY: 0 };
-      return DEFAULT_CELL();
-    });
-    setCells(newCells);
-  }, [staged]);
-
-  // Saat foto staging berubah & layout sudah dipilih: sync cells
+  // Sync cells saat layout/staged berubah
   useEffect(() => {
-    if (!selectedLayout) return;
-    // Jika jumlah foto staging tidak cocok lagi dengan layout, reset layout
-    if (filledCount !== selectedLayout.photoCount) {
-      setSelectedLayout(null);
-      setCells([]);
-      return;
-    }
-    // Update cells dari staged terbaru, pertahankan scale/offset yang sudah diatur
-    setCells(prev => selectedLayout.cells.map((_, i) => {
+    if (!layout) return;
+    if (filledCount !== layout.photoCount) { setLayout(null); setCells([]); return; }
+    setCells(prev => layout.cells.map((_,i) => {
       const s = staged[i];
-      const existing = prev[i];
-      if (s) {
-        // Jika gambar sama, pertahankan posisi; jika beda, reset
-        if (existing?.imageSrc === s.imageSrc) return existing;
-        return { imageSrc: s.imageSrc, imgNaturalW: s.imgNaturalW, imgNaturalH: s.imgNaturalH, scale: 1, offsetX: 0, offsetY: 0 };
-      }
-      return DEFAULT_CELL();
+      if (!s) return EMPTY_CELL();
+      const ex = prev[i];
+      if (ex?.imageSrc === s.imageSrc) return ex;
+      return { imageSrc:s.imageSrc, imgNaturalW:s.imgNaturalW, imgNaturalH:s.imgNaturalH, scale:1, offsetX:0, offsetY:0 };
     }));
-  }, [staged, selectedLayout, filledCount]);
+  }, [staged, layout, filledCount]);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const t = e.target as HTMLElement;
-      if (!t.closest('[data-collage-area]')) setSelectedCell(null);
-    };
-    window.addEventListener('mousedown', handler);
-    return () => window.removeEventListener('mousedown', handler);
-  }, []);
-
-  // Upload satu file ke slot tertentu
-  const uploadToStaged = useCallback((i: number, file: File) => {
+  const uploadFile = useCallback((i: number, file: File) => {
     if (!file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = e => {
+    const r = new FileReader();
+    r.onload = e => {
       const src = e.target?.result as string;
       const img = new Image();
-      img.onload = () => {
-        setStaged(prev => {
-          const next = [...prev];
-          next[i] = { imageSrc: src, imgNaturalW: img.naturalWidth, imgNaturalH: img.naturalHeight };
-          return next;
-        });
-      };
+      img.onload = () => setStaged(prev => {
+        const n = [...prev];
+        n[i] = { imageSrc:src, imgNaturalW:img.naturalWidth, imgNaturalH:img.naturalHeight };
+        return n;
+      });
       img.src = src;
     };
-    reader.readAsDataURL(file);
+    r.readAsDataURL(file);
   }, []);
 
-  // Upload banyak file sekaligus (multi-select dari galeri HP)
   const uploadMultiple = useCallback((files: FileList) => {
-    const imgs = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, 6);
-    imgs.forEach((file, fi) => {
-      const reader = new FileReader();
-      reader.onload = e => {
+    Array.from(files).filter(f=>f.type.startsWith('image/')).slice(0,6).forEach(file => {
+      const r = new FileReader();
+      r.onload = e => {
         const src = e.target?.result as string;
         const img = new Image();
-        img.onload = () => {
-          setStaged(prev => {
-            // Cari slot kosong mulai dari fi, atau expand array
-            const next = [...prev];
-            // Isi slot kosong secara berurutan
-            let slotIdx = -1;
-            for (let k = 0; k < next.length; k++) {
-              if (!next[k]) { slotIdx = k; break; }
-            }
-            if (slotIdx === -1) {
-              if (next.length < 6) { next.push(null); slotIdx = next.length - 1; }
-              else return next; // penuh
-            }
-            next[slotIdx] = { imageSrc: src, imgNaturalW: img.naturalWidth, imgNaturalH: img.naturalHeight };
-            return next;
-          });
-        };
+        img.onload = () => setStaged(prev => {
+          const n = [...prev];
+          const slot = n.findIndex(x => !x);
+          if (slot === -1 && n.length < 6) { n.push({ imageSrc:src, imgNaturalW:img.naturalWidth, imgNaturalH:img.naturalHeight }); }
+          else if (slot !== -1) { n[slot] = { imageSrc:src, imgNaturalW:img.naturalWidth, imgNaturalH:img.naturalHeight }; }
+          return n;
+        });
         img.src = src;
       };
-      reader.readAsDataURL(file);
+      r.readAsDataURL(file);
     });
   }, []);
 
-  // Tambah slot foto
-  const addSlot = useCallback(() => {
-    if (staged.length >= 6) return;
-    setStaged(prev => [...prev, null]);
-  }, [staged.length]);
+  const updateCell = useCallback((i:number,p:Partial<CellState>) => setCells(prev=>prev.map((c,ci)=>ci!==i?c:{...c,...p})),[]);
+  const zoomCell = useCallback((i:number,ns:number) => setCells(prev=>prev.map((c,ci)=>{
+    if(ci!==i) return c;
+    const {mx,my}=calcMax(c.imgNaturalW||1,c.imgNaturalH||1,c.imgNaturalW||1,c.imgNaturalH||1,ns);
+    return {...c,scale:ns,offsetX:Math.max(-mx,Math.min(mx,c.offsetX)),offsetY:Math.max(-my,Math.min(my,c.offsetY))};
+  })),[]);
 
-  // Hapus slot foto
-  const removeSlot = useCallback((i: number) => {
-    setStaged(prev => {
-      const next = prev.filter((_, idx) => idx !== i);
-      return next.length === 0 ? [null] : next;
-    });
-    setSelectedLayout(null);
-    setCells([]);
-    setSelectedCell(null);
-  }, []);
+  const addLayer   = useCallback((l:Layer)=>{setLayers(p=>[...p,l]);setSelLayer(l.id);},[]);
+  const removeLayer= useCallback((id:string)=>{setLayers(p=>p.filter(l=>l.id!==id));setSelLayer(null);},[]);
+  const updateLayer= useCallback((id:string,p:Partial<Layer>)=>setLayers(prev=>prev.map(l=>l.id!==id?l:{...l,...p}as Layer)),[]);
 
-  // Update cell (zoom/pan di preview)
-  const updateCell = useCallback((i: number, patch: Partial<CellState>) => {
-    setCells(prev => prev.map((c, ci) => ci !== i ? c : { ...c, ...patch }));
-  }, []);
-
-  const handleRemoveCell  = useCallback((i: number) => { updateCell(i, DEFAULT_CELL()); setSelectedCell(null); }, [updateCell]);
-  const handleDragOver    = useCallback((e: React.DragEvent, i: number) => { e.preventDefault(); setDragOverCell(i); }, []);
-  const handleDragLeave   = useCallback(() => setDragOverCell(null), []);
-  const handleDrop        = useCallback((e: React.DragEvent, i: number) => {
-    e.preventDefault(); setDragOverCell(null);
-    const f = e.dataTransfer.files[0];
-    if (f) { uploadToStaged(i, f); }
-  }, [uploadToStaged]);
-
-  const getCellStyle = useCallback((cell: CollageCell): React.CSSProperties => {
-    if (cell.clip) {
-      return { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', clipPath: toClip(cell.clip) };
-    }
-    const g = gap / 2, eps = 0.05;
-    return {
-      position: 'absolute',
-      left: `${cell.x}%`, top: `${cell.y}%`, width: `${cell.w}%`, height: `${cell.h}%`,
-      paddingTop:    cell.y < eps ? 0 : g,
-      paddingBottom: cell.y + cell.h > 100 - eps ? 0 : g,
-      paddingLeft:   cell.x < eps ? 0 : g,
-      paddingRight:  cell.x + cell.w > 100 - eps ? 0 : g,
-    };
-  }, [gap]);
-
-  const handleScaleChange = useCallback((i: number, newScale: number) => {
-    setCells(prev => prev.map((c, ci) => {
-      if (ci !== i) return c;
-      const imgW = c.imgNaturalW || 1, imgH = c.imgNaturalH || 1;
-      const { maxOffX, maxOffY } = calcMaxOffset(imgW, imgH, imgW, imgH, newScale);
-      return { ...c, scale: newScale, offsetX: Math.max(-maxOffX, Math.min(maxOffX, c.offsetX)), offsetY: Math.max(-maxOffY, Math.min(maxOffY, c.offsetY)) };
-    }));
-  }, []);
-
-  // ── Layer helpers ──
-  const addTextLayer = useCallback(() => {
-    // Baca langsung dari DOM input (uncontrolled) — 100% fresh, tidak ada stale closure
-    const text = inputRef.current?.value?.trim() ?? '';
-    if (!text) return;
-    const f = textFormRef.current;
-    const layer: TextLayer = {
-      kind: 'text', id: `t_${Date.now()}`,
-      text, font: f.font, color: f.color, size: f.size, bold: f.bold, italic: f.italic, shadow: f.shadow,
-      x: 50, y: 50, rotation: 0,
-    };
-    setLayers(prev => [...prev, layer]);
-    setSelectedLayer(layer.id);
-    // Reset input DOM langsung
-    if (inputRef.current) inputRef.current.value = '';
-  }, []); // tidak bergantung state apapun
-
-  const addStickerLayer = useCallback((symbol: string) => {
-    const layer: StickerLayer = {
-      kind: 'sticker', id: `s_${Date.now()}`,
-      symbol, size: 48, x: 50, y: 50, rotation: 0,
-    };
-    setLayers(prev => [...prev, layer]);
-    setSelectedLayer(layer.id);
-  }, []);
-
-  const updateLayer = useCallback((id: string, patch: Partial<Layer>) => {
-    setLayers(prev => prev.map(l => l.id !== id ? l : { ...l, ...patch } as Layer));
-  }, []);
-
-  const removeLayer = useCallback((id: string) => {
-    setLayers(prev => prev.filter(l => l.id !== id));
-    setSelectedLayer(null);
-  }, []);
-
-  // Drag layer di preview (mouse & touch)
-  const layerDrag = useRef<{ id:string; startX:number; startY:number; origX:number; origY:number } | null>(null);
-
-  const handleLayerMouseDown = useCallback((e: React.MouseEvent, id: string, lx: number, ly: number) => {
-    e.stopPropagation();
-    setSelectedLayer(id);
-    layerDrag.current = { id, startX: e.clientX, startY: e.clientY, origX: lx, origY: ly };
-    const onMove = (ev: MouseEvent) => {
-      if (!layerDrag.current || !previewRef.current) return;
-      const rect = previewRef.current.getBoundingClientRect();
-      const dx = (ev.clientX - layerDrag.current.startX) / rect.width * 100;
-      const dy = (ev.clientY - layerDrag.current.startY) / rect.height * 100;
-      updateLayer(layerDrag.current.id, {
-        x: Math.max(0, Math.min(100, layerDrag.current.origX + dx)),
-        y: Math.max(0, Math.min(100, layerDrag.current.origY + dy)),
+  // Layer drag — mouse
+  const onLayerMD = useCallback((e:React.MouseEvent,id:string,lx:number,ly:number) => {
+    e.stopPropagation(); e.preventDefault();
+    setSelLayer(id);
+    layerDragRef.current = {id,sx:e.clientX,sy:e.clientY,ox:lx,oy:ly};
+    const mv = (ev:MouseEvent) => {
+      if(!layerDragRef.current||!previewRef.current) return;
+      const r=previewRef.current.getBoundingClientRect();
+      updateLayer(layerDragRef.current.id,{
+        x:Math.max(5,Math.min(95,layerDragRef.current.ox+(ev.clientX-layerDragRef.current.sx)/r.width*100)),
+        y:Math.max(5,Math.min(95,layerDragRef.current.oy+(ev.clientY-layerDragRef.current.sy)/r.height*100)),
       });
     };
-    const onUp = () => { layerDrag.current = null; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [updateLayer]);
+    const up = ()=>{layerDragRef.current=null;window.removeEventListener('mousemove',mv);window.removeEventListener('mouseup',up);};
+    window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
+  },[updateLayer]);
 
-  const handleLayerTouchStart = useCallback((e: React.TouchEvent, id: string, lx: number, ly: number) => {
+  // Layer drag — touch
+  const onLayerTS = useCallback((e:React.TouchEvent,id:string,lx:number,ly:number) => {
     e.stopPropagation();
-    if (e.touches.length !== 1) return;
-    setSelectedLayer(id);
-    layerDrag.current = { id, startX: e.touches[0].clientX, startY: e.touches[0].clientY, origX: lx, origY: ly };
-
-    // Gunakan window listener seperti mouse drag — agar drag tetap jalan walau jari keluar element
-    const onMove = (ev: TouchEvent) => {
-      if (!layerDrag.current || ev.touches.length !== 1 || !previewRef.current) return;
+    if(e.touches.length!==1) return;
+    setSelLayer(id);
+    layerDragRef.current={id,sx:e.touches[0].clientX,sy:e.touches[0].clientY,ox:lx,oy:ly};
+    const mv=(ev:TouchEvent)=>{
+      if(!layerDragRef.current||ev.touches.length!==1||!previewRef.current) return;
       ev.preventDefault();
-      const rect = previewRef.current.getBoundingClientRect();
-      const dx = (ev.touches[0].clientX - layerDrag.current.startX) / rect.width * 100;
-      const dy = (ev.touches[0].clientY - layerDrag.current.startY) / rect.height * 100;
-      updateLayer(layerDrag.current.id, {
-        x: Math.max(0, Math.min(100, layerDrag.current.origX + dx)),
-        y: Math.max(0, Math.min(100, layerDrag.current.origY + dy)),
+      const r=previewRef.current.getBoundingClientRect();
+      updateLayer(layerDragRef.current.id,{
+        x:Math.max(5,Math.min(95,layerDragRef.current.ox+(ev.touches[0].clientX-layerDragRef.current.sx)/r.width*100)),
+        y:Math.max(5,Math.min(95,layerDragRef.current.oy+(ev.touches[0].clientY-layerDragRef.current.sy)/r.height*100)),
       });
     };
-    const onEnd = () => {
-      layerDrag.current = null;
-      window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('touchend', onEnd);
-    };
-    window.addEventListener('touchmove', onMove, { passive: false });
-    window.addEventListener('touchend', onEnd);
-  }, [updateLayer]);
+    const up=()=>{layerDragRef.current=null;window.removeEventListener('touchmove',mv);window.removeEventListener('touchend',up);};
+    window.addEventListener('touchmove',mv,{passive:false}); window.addEventListener('touchend',up);
+  },[updateLayer]);
 
-  // Tidak dipakai lagi — drag ditangani via window listener di handleLayerTouchStart
-  const handleLayerTouchMove = useCallback((_e: React.TouchEvent) => {}, []);
+  const getCellStyle = useCallback((cell:CollageCell):React.CSSProperties => {
+    if(cell.clip) return {position:'absolute',left:0,top:0,width:'100%',height:'100%',clipPath:toClip(cell.clip)};
+    const g=gap/2,e=0.05;
+    return {position:'absolute',left:`${cell.x}%`,top:`${cell.y}%`,width:`${cell.w}%`,height:`${cell.h}%`,
+      paddingTop:cell.y<e?0:g,paddingBottom:cell.y+cell.h>100-e?0:g,
+      paddingLeft:cell.x<e?0:g,paddingRight:cell.x+cell.w>100-e?0:g};
+  },[gap]);
 
   const handleExport = async () => {
-    if (!selectedLayout) return;
-    setIsExporting(true);
+    if (!layout) return;
+    setExporting(true);
     try {
-      const [expW, expH] = aspectRatio.split(':').map(Number);
-      const W = 1080, H = Math.round(W * expH / expW);
-      const gPx = gap, eps = 0.05;
-      const canvas = document.createElement('canvas');
-      canvas.width = W; canvas.height = H;
-      const ctx = canvas.getContext('2d')!;
-      ctx.fillStyle = bgColor;
-      ctx.fillRect(0, 0, W, H);
+      const [aw,ah]=ar.split(':').map(Number);
+      const W=1080,H=Math.round(W*ah/aw),eps=0.05,gp=gap;
+      const canvas=document.createElement('canvas'); canvas.width=W; canvas.height=H;
+      const ctx=canvas.getContext('2d')!;
+      ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
 
-      for (let i = 0; i < selectedLayout.cells.length; i++) {
-        const cell = selectedLayout.cells[i];
-        const cs   = cells[i];
-        if (!cs?.imageSrc) continue;
-
-        const img = await new Promise<HTMLImageElement>((res, rej) => {
-          const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = cs.imageSrc!;
-          if (im.complete && im.naturalWidth > 0) res(im);
-        });
-
-        let cX: number, cY: number, cW: number, cH: number;
-        if (cell.clip) {
-          cX = 0; cY = 0; cW = W; cH = H;
-        } else {
-          const pT = cell.y < eps ? 0 : gPx / 2, pB = cell.y + cell.h > 100 - eps ? 0 : gPx / 2;
-          const pL = cell.x < eps ? 0 : gPx / 2, pR = cell.x + cell.w > 100 - eps ? 0 : gPx / 2;
-          cX = (cell.x / 100) * W + pL; cY = (cell.y / 100) * H + pT;
-          cW = (cell.w / 100) * W - pL - pR; cH = (cell.h / 100) * H - pT - pB;
+      for(let i=0;i<layout.cells.length;i++){
+        const cell=layout.cells[i],cs=cells[i];
+        if(!cs?.imageSrc) continue;
+        const img=await new Promise<HTMLImageElement>((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=cs.imageSrc!;if(im.complete&&im.naturalWidth>0)res(im);});
+        let cX:number,cY:number,cW:number,cH:number;
+        if(cell.clip){cX=0;cY=0;cW=W;cH=H;}
+        else{
+          const pT=cell.y<eps?0:gp/2,pB=cell.y+cell.h>100-eps?0:gp/2,pL=cell.x<eps?0:gp/2,pR=cell.x+cell.w>100-eps?0:gp/2;
+          cX=(cell.x/100)*W+pL;cY=(cell.y/100)*H+pT;cW=(cell.w/100)*W-pL-pR;cH=(cell.h/100)*H-pT-pB;
         }
-
-        const containScale = Math.min(cW / img.naturalWidth, cH / img.naturalHeight);
-        const finalW = img.naturalWidth * containScale * cs.scale;
-        const finalH = img.naturalHeight * containScale * cs.scale;
-        const drawX  = (cX + cW / 2) + cs.offsetX * cW * cs.scale - finalW / 2;
-        const drawY  = (cY + cH / 2) + cs.offsetY * cH * cs.scale - finalH / 2;
-
-        ctx.save();
-        ctx.beginPath();
-        if (cell.clip) {
-          const pts = cell.clip.split(',').map(p => { const [x, y] = p.trim().split(' '); return { x: parseFloat(x) / 100 * W, y: parseFloat(y) / 100 * H }; });
-          ctx.moveTo(pts[0].x, pts[0].y);
-          for (let j = 1; j < pts.length; j++) ctx.lineTo(pts[j].x, pts[j].y);
-          ctx.closePath();
-        } else {
-          ctx.rect(cX, cY, cW, cH);
-        }
-        ctx.clip();
-        ctx.drawImage(img, drawX, drawY, finalW, finalH);
-        ctx.restore();
+        const cs2=Math.min(cW/img.naturalWidth,cH/img.naturalHeight);
+        const fW=img.naturalWidth*cs2*cs.scale,fH=img.naturalHeight*cs2*cs.scale;
+        const dX=(cX+cW/2)+cs.offsetX*cW*cs.scale-fW/2,dY=(cY+cH/2)+cs.offsetY*cH*cs.scale-fH/2;
+        ctx.save(); ctx.beginPath();
+        if(cell.clip){const pts=cell.clip.split(',').map(p=>{const[x,y]=p.trim().split(' ');return{x:+x/100*W,y:+y/100*H};});ctx.moveTo(pts[0].x,pts[0].y);pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));ctx.closePath();}
+        else ctx.rect(cX,cY,cW,cH);
+        ctx.clip(); ctx.drawImage(img,dX,dY,fW,fH); ctx.restore();
       }
 
-      // ── Render layers (teks & stiker) di atas foto ──
-      for (const layer of layers) {
-        const lx = layer.x / 100 * W;
-        const ly = layer.y / 100 * H;
-        ctx.save();
-        ctx.translate(lx, ly);
-        ctx.rotate((layer.rotation * Math.PI) / 180);
-        if (layer.kind === 'text') {
-          const fontStr = `${layer.italic ? 'italic ' : ''}${layer.bold ? 'bold ' : ''}${layer.size * (W / 400)}px ${FONTS.find(f => f.id === layer.font)?.css || 'Arial'}`;
-          ctx.font = fontStr;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          if (layer.shadow) {
-            ctx.shadowColor = 'rgba(0,0,0,0.7)';
-            ctx.shadowBlur = layer.size * 0.15 * (W / 400);
-            ctx.shadowOffsetX = 2;
-            ctx.shadowOffsetY = 2;
-          }
-          ctx.fillStyle = layer.color;
-          ctx.fillText(layer.text, 0, 0);
+      // Render layers
+      for(const layer of layers){
+        const lx=layer.x/100*W,ly=layer.y/100*H;
+        ctx.save(); ctx.translate(lx,ly); ctx.rotate(layer.rotation*Math.PI/180);
+        if(layer.kind==='text'){
+          const tl=layer as TextLayer;
+          const fscale=W/500;
+          ctx.font=`${tl.italic?'italic ':''}${tl.bold?'bold ':''}${tl.size*fscale}px ${FONTS.find(f=>f.id===tl.font)?.css||'Arial'}`;
+          ctx.textAlign='center'; ctx.textBaseline='middle';
+          if(tl.shadow){ctx.shadowColor='rgba(0,0,0,0.9)';ctx.shadowBlur=tl.size*0.2*fscale;ctx.shadowOffsetX=2;ctx.shadowOffsetY=2;}
+          ctx.fillStyle=tl.color; ctx.fillText(tl.text,0,0);
         } else {
-          const sz = layer.size * (W / 400);
-          ctx.font = `${sz}px serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(layer.symbol, 0, 0);
+          const sl=layer as StickerLayer;
+          ctx.font=`${sl.size*(W/500)}px serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText(sl.symbol,0,0);
         }
         ctx.restore();
       }
 
-      canvas.toBlob(blob => {
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = `kolase_${Date.now()}.png`;
-        document.body.appendChild(a); a.click();
-        requestAnimationFrame(() => { document.body.removeChild(a); URL.revokeObjectURL(url); });
-      }, 'image/png');
-    } catch (err) { console.error('Export error:', err); }
-    finally { setIsExporting(false); }
+      canvas.toBlob(blob=>{
+        if(!blob) return;
+        const url=URL.createObjectURL(blob),a=document.createElement('a');
+        a.href=url;a.download=`kolase_${Date.now()}.png`;document.body.appendChild(a);a.click();
+        requestAnimationFrame(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);});
+      },'image/png');
+    } catch(e){console.error(e);}
+    finally{setExporting(false);}
   };
 
-  const [arW, arH] = aspectRatio.split(':').map(Number);
-  const categories = ['kotak', 'diagonal', 'chevron', 'gelombang'];
-  const selCs = selectedCell !== null ? cells[selectedCell] : null;
-
-  // Step aktif: 1 = upload foto, 2 = pilih layout, 3 = atur & download
-  const step = filledCount === 0 ? 1 : !selectedLayout ? 2 : 3;
+  const [arW,arH]=ar.split(':').map(Number);
+  const matchLayouts=filledCount>0?LAYOUTS.filter(l=>l.photoCount===filledCount&&(!catF||l.category===catF)):[];
+  const selCs=selCell!==null?cells[selCell]:null;
+  const step=filledCount===0?1:!layout?2:3;
 
   return (
-    <div className="space-y-6" data-collage-area>
+    <div className="space-y-5">
 
-      {/* ── STEP INDICATOR ── */}
-      <div className="flex items-center gap-2">
-        {[
-          { n:1, label:'Upload Foto' },
-          { n:2, label:'Pilih Layout' },
-          { n:3, label:'Atur & Download' },
-        ].map((s, idx) => (
-          <React.Fragment key={s.n}>
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-              step === s.n ? 'bg-indigo-600 text-white shadow-lg' :
-              step > s.n  ? 'bg-indigo-900/50 text-indigo-400' :
-              'bg-slate-700/50 text-slate-500'
-            }`}>
-              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
-                step > s.n ? 'bg-indigo-500 text-white' : step === s.n ? 'bg-white text-indigo-600' : 'bg-slate-600 text-slate-400'
-              }`}>{step > s.n ? '✓' : s.n}</span>
-              {s.label}
+      {/* Step indicator */}
+      <div className="flex items-center gap-1.5">
+        {(['Upload Foto','Pilih Layout','Atur & Download'] as const).map((lbl,i)=>(
+          <React.Fragment key={i}>
+            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-semibold ${step===i+1?'bg-indigo-600 text-white':step>i+1?'bg-indigo-900/50 text-indigo-400':'bg-slate-700/50 text-slate-500'}`}>
+              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${step>i+1?'bg-indigo-500 text-white':step===i+1?'bg-white text-indigo-600':'bg-slate-600 text-slate-400'}`}>{step>i+1?'✓':i+1}</span>
+              {lbl}
             </div>
-            {idx < 2 && <div className={`flex-1 h-0.5 rounded ${step > s.n ? 'bg-indigo-600' : 'bg-slate-700'}`}/>}
+            {i<2&&<div className={`flex-1 h-0.5 rounded ${step>i+1?'bg-indigo-600':'bg-slate-700'}`}/>}
           </React.Fragment>
         ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
 
-        {/* ═══ PANEL KIRI ═══ */}
-        <div className="space-y-5">
+        {/* ── KIRI ── */}
+        <div className="space-y-4">
 
-          {/* ── STEP 1: UPLOAD FOTO ── */}
-          <div className={`rounded-xl border transition-all ${step === 1 ? 'border-indigo-500/60 bg-indigo-950/20' : 'border-slate-700 bg-slate-800/30'}`}>
+          {/* Step 1: Upload */}
+          <div className={`rounded-xl border overflow-hidden ${step===1?'border-indigo-500/60 bg-indigo-950/20':'border-slate-700 bg-slate-800/30'}`}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
               <div className="flex items-center gap-2">
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${step > 1 ? 'bg-indigo-500 text-white' : 'bg-indigo-600 text-white'}`}>
-                  {step > 1 ? '✓' : '1'}
-                </span>
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${step>1?'bg-indigo-500 text-white':'bg-indigo-600 text-white'}`}>{step>1?'✓':'1'}</span>
                 <span className="text-sm font-semibold text-white">Upload Foto</span>
-                <span className="text-xs text-slate-500">({filledCount}/{staged.length} terisi · maks 6)</span>
+                <span className="text-xs text-slate-500">({filledCount}/{staged.length} · maks 6)</span>
               </div>
               <div className="flex items-center gap-2">
-                {/* Upload banyak sekaligus */}
-                <label className="cursor-pointer text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors">
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-8-8l-4 4m0 0l4 4m-4-4h12"/></svg>
-                  Upload semua
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={e => {
-                    if (e.target.files?.length) uploadMultiple(e.target.files);
-                    e.target.value = '';
-                  }}/>
+                <label className="cursor-pointer text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1">
+                  ↑ Semua
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={e=>{if(e.target.files?.length)uploadMultiple(e.target.files);e.target.value='';}}/>
                 </label>
-                {staged.length < 6 && (
-                  <button type="button" onClick={addSlot}
-                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors">
-                    + Slot
-                  </button>
-                )}
+                {staged.length<6&&<button type="button" onClick={()=>setStaged(p=>[...p,null])} className="text-xs text-indigo-400 hover:text-indigo-300">+ Slot</button>}
               </div>
             </div>
             <div className="p-3">
               <div className="grid grid-cols-3 gap-2">
-                {staged.map((photo, i) => {
-                  const isOver = dragOverStaged === i;
-                  return (
-                    <div key={i} className="relative aspect-square">
-                      <div
-                        className={`w-full h-full rounded-lg overflow-hidden border-2 border-dashed transition-all ${
-                          photo ? 'border-transparent' : isOver ? 'border-indigo-400 bg-slate-700' : 'border-slate-600 bg-slate-800/50 hover:border-slate-500'
-                        }`}
-                        onDragOver={e => { e.preventDefault(); setDragOverStaged(i); }}
-                        onDragLeave={() => setDragOverStaged(null)}
-                        onDrop={e => { e.preventDefault(); setDragOverStaged(null); Array.from(e.dataTransfer.files).forEach((f, fi) => { if (i + fi < 6) uploadToStaged(i + fi, f); }); }}
-                      >
-                        {photo ? (
-                          <>
-                            <img src={photo.imageSrc} className="w-full h-full object-cover" alt={`Foto ${i+1}`}/>
-                            <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
-                              <label className="cursor-pointer p-1 bg-slate-700 hover:bg-slate-600 rounded text-[10px] text-white">
-                                Ganti
-                                <input type="file" accept="image/*" multiple className="hidden" onChange={e => {
-                              if (!e.target.files?.length) return;
-                              const files = Array.from(e.target.files);
-                              // Auto-expand slot jika perlu
-                              setStaged(prev => {
-                                let next = [...prev];
-                                while (next.length < Math.min(6, i + files.length)) next.push(null);
-                                return next;
-                              });
-                              files.forEach((f, fi) => { if (i + fi < 6) uploadToStaged(i + fi, f); });
-                              e.target.value='';
-                            }}/>
-                              </label>
-                              <button type="button" onClick={() => removeSlot(i)} className="p-1 bg-red-600/80 hover:bg-red-600 rounded text-[10px] text-white">Hapus</button>
-                            </div>
-                          </>
-                        ) : (
-                          <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
-                            <input type="file" accept="image/*" multiple className="hidden" onChange={e => {
-                              if (!e.target.files?.length) return;
-                              const files = Array.from(e.target.files);
-                              // Auto-expand slot jika perlu
-                              setStaged(prev => {
-                                let next = [...prev];
-                                while (next.length < Math.min(6, i + files.length)) next.push(null);
-                                return next;
-                              });
-                              files.forEach((f, fi) => { if (i + fi < 6) uploadToStaged(i + fi, f); });
-                              e.target.value='';
-                            }}/>
-                            <svg className="w-5 h-5 text-slate-500 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4"/>
-                            </svg>
-                            <span className="text-[9px] text-slate-500">Foto {i+1}</span>
-                          </label>
-                        )}
-                      </div>
-                      {/* Nomor badge */}
-                      <span className="absolute top-1 left-1 w-4 h-4 bg-black/60 text-white text-[8px] font-bold rounded-full flex items-center justify-center pointer-events-none">{i+1}</span>
+                {staged.map((photo,i)=>(
+                  <div key={i} className="relative aspect-square">
+                    <div className={`w-full h-full rounded-lg overflow-hidden border-2 border-dashed ${photo?'border-transparent':dropStaged===i?'border-indigo-400 bg-slate-700':'border-slate-600 bg-slate-800/50'}`}
+                      onDragOver={e=>{e.preventDefault();setDropStaged(i);}}
+                      onDragLeave={()=>setDropStaged(null)}
+                      onDrop={e=>{e.preventDefault();setDropStaged(null);const f=e.dataTransfer.files[0];if(f)uploadFile(i,f);}}>
+                      {photo?(
+                        <>
+                          <img src={photo.imageSrc} className="w-full h-full object-cover" alt=""/>
+                          <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                            <label className="cursor-pointer p-1 bg-slate-700 rounded text-[10px] text-white">Ganti<input type="file" accept="image/*" className="hidden" onChange={e=>{if(e.target.files?.[0])uploadFile(i,e.target.files[0]);e.target.value='';}}/>
+                            </label>
+                            <button type="button" onClick={()=>{setStaged(p=>p.filter((_,j)=>j!==i).length?p.filter((_,j)=>j!==i):[null]);setLayout(null);setCells([]);}} className="p-1 bg-red-600/80 rounded text-[10px] text-white">✕</button>
+                          </div>
+                        </>
+                      ):(
+                        <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
+                          <input type="file" accept="image/*" className="hidden" onChange={e=>{if(e.target.files?.[0])uploadFile(i,e.target.files[0]);e.target.value='';}}/>
+                          <svg className="w-5 h-5 text-slate-500 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4"/></svg>
+                          <span className="text-[9px] text-slate-500">Foto {i+1}</span>
+                        </label>
+                      )}
                     </div>
-                  );
-                })}
+                    <span className="absolute top-1 left-1 w-4 h-4 bg-black/60 text-white text-[8px] font-bold rounded-full flex items-center justify-center pointer-events-none">{i+1}</span>
+                  </div>
+                ))}
               </div>
-              {/* Tombol upload banyak sekaligus */}
-              <label className="flex items-center justify-center gap-2 w-full mt-2 py-2 rounded-lg border border-dashed border-indigo-500/40 bg-indigo-950/20 hover:bg-indigo-950/40 cursor-pointer transition-colors">
-                <input type="file" accept="image/*" multiple className="hidden" onChange={e => {
-                  if (!e.target.files) return;
-                  const files = Array.from(e.target.files).slice(0, 6);
-                  // Isi slot kosong dulu, lalu slot yang sudah ada
-                  setStaged(prev => {
-                    let next = [...prev];
-                    // Pastikan cukup slot
-                    while (next.length < Math.min(6, files.length)) next.push(null);
-                    let fileIdx = 0;
-                    // Isi slot kosong dulu
-                    for (let si = 0; si < next.length && fileIdx < files.length; si++) {
-                      if (!next[si]) { fileIdx++; } // akan diisi via uploadToStaged
-                    }
-                    return next;
-                  });
-                  files.forEach((f, fi) => {
-                    // Cari slot kosong ke-fi atau gunakan slot baru
-                    setStaged(prev => {
-                      const emptySlots = prev.map((s, idx) => s === null ? idx : -1).filter(idx => idx >= 0);
-                      const targetSlot = emptySlots[fi] !== undefined ? emptySlots[fi] : fi;
-                      if (targetSlot >= 6) return prev;
-                      const next = [...prev];
-                      while (next.length <= targetSlot) next.push(null);
-                      return next;
-                    });
-                    uploadToStaged(fi < staged.length ? (staged.findIndex((s,i) => !s && i >= fi) >= 0 ? staged.findIndex((s,i) => !s && i >= fi) : fi) : fi, f);
-                  });
-                  e.target.value='';
-                }}/>
-                <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                </svg>
-                <span className="text-xs text-indigo-400 font-medium">Upload beberapa foto sekaligus</span>
-                <span className="text-[10px] text-slate-500">(pilih banyak di galeri)</span>
-              </label>
-              {filledCount === 0 && (
-                <p className="text-[10px] text-slate-500 text-center mt-1">Layout muncul otomatis sesuai jumlah foto yang diupload</p>
-              )}
-              {filledCount > 0 && !selectedLayout && (
-                <p className="text-[10px] text-indigo-400 text-center mt-1 animate-pulse">
-                  ✓ {filledCount} foto siap — pilih layout di bawah
-                </p>
-              )}
+              {filledCount>0&&!layout&&<p className="text-[10px] text-indigo-400 text-center mt-2 animate-pulse">✓ {filledCount} foto — pilih layout di bawah</p>}
             </div>
           </div>
 
-          {/* ── TAB: TEKS & STIKER (hanya muncul jika layout sudah dipilih) ── */}
-          {selectedLayout && (
-            <div className="rounded-xl border border-slate-700 bg-slate-800/30 overflow-hidden">
-              {/* Tab header */}
-              <div className="flex border-b border-slate-700">
-                {(['foto','teks','stiker'] as const).map(tab => (
-                  <button key={tab} type="button" onClick={() => setActiveTab(tab)}
-                    className={`flex-1 py-2.5 text-xs font-semibold capitalize transition-colors ${activeTab === tab ? 'bg-indigo-600/30 text-white border-b-2 border-indigo-500' : 'text-slate-400 hover:text-slate-300'}`}>
-                    {tab === 'foto' ? '🖼 Foto' : tab === 'teks' ? '✏️ Teks' : '🎨 Stiker'}
-                  </button>
-                ))}
-              </div>
-
-              {/* Tab: Teks — TextForm sub-component, state terisolasi */}
-              {activeTab === 'teks' && (
-                <TextForm onAdd={layer => { setLayers(prev => [...prev, layer]); setSelectedLayer(layer.id); }} />
-              )}
-
-
-              {/* Tab: Stiker */}
-              {activeTab === 'stiker' && (
-                <div className="p-3 space-y-3">
-                  {/* Group selector */}
-                  <div className="flex gap-1.5 flex-wrap">
-                    {STICKERS.map(g => (
-                      <button key={g.group} type="button" onClick={() => setShowStickerGroup(g.group)}
-                        className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${showStickerGroup === g.group ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>
-                        {g.group}
-                      </button>
-                    ))}
-                  </div>
-                  {/* Stiker grid */}
-                  <div className="grid grid-cols-6 gap-1.5">
-                    {STICKERS.find(g => g.group === showStickerGroup)?.items.map(sym => (
-                      <button key={sym} type="button" onClick={() => addStickerLayer(sym)}
-                        className="aspect-square rounded-lg bg-slate-700 hover:bg-slate-600 text-xl flex items-center justify-center transition-colors hover:scale-110 active:scale-95">
-                        {sym}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[10px] text-slate-500 text-center">Klik stiker untuk menambahkan ke kolase</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── DAFTAR LAYER AKTIF ── */}
-          {selectedLayout && layers.length > 0 && (
-            <div className="rounded-xl border border-slate-700 bg-slate-800/30 overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/50">
-                <span className="text-xs font-semibold text-slate-300">Layer ({layers.length})</span>
-                <button type="button" onClick={() => setLayers([])} className="text-[10px] text-red-400/60 hover:text-red-400 transition-colors">Hapus Semua</button>
-              </div>
-              <div className="p-2 space-y-1 max-h-40 overflow-y-auto">
-                {[...layers].reverse().map(layer => {
-                  const isSel = selectedLayer === layer.id;
-                  return (
-                    <div key={layer.id} onClick={() => setSelectedLayer(isSel ? null : layer.id)}
-                      className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${isSel ? 'bg-indigo-600/30 border border-indigo-500/40' : 'bg-slate-700/40 hover:bg-slate-700/60'}`}>
-                      <span className="text-sm">{layer.kind === 'sticker' ? layer.symbol : '✏️'}</span>
-                      <span className="text-xs text-slate-300 truncate flex-1">
-                        {layer.kind === 'text' ? layer.text : `Stiker ${layer.symbol}`}
-                      </span>
-                      {isSel && (
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          {/* Size slider inline */}
-                          <input type="range" min={layer.kind === 'text' ? 14 : 20} max={layer.kind === 'text' ? 120 : 150}
-                            value={layer.size}
-                            onChange={e => updateLayer(layer.id, { size: Number(e.target.value) })}
-                            className="w-16 h-1.5 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-600"
-                            onClick={e => e.stopPropagation()}
-                          />
-                        </div>
-                      )}
-                      <button type="button" onClick={e => { e.stopPropagation(); removeLayer(layer.id); }}
-                        className="w-5 h-5 flex-shrink-0 bg-red-600/60 hover:bg-red-500 rounded text-[10px] text-white flex items-center justify-center">✕</button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* ── STEP 2: PILIH LAYOUT ── */}
-          {filledCount > 0 && (
-            <div className={`rounded-xl border transition-all ${!selectedLayout ? 'border-indigo-500/60 bg-indigo-950/20' : 'border-slate-700 bg-slate-800/30'}`}>
+          {/* Step 2: Layout */}
+          {filledCount>0&&(
+            <div className={`rounded-xl border overflow-hidden ${!layout?'border-indigo-500/60 bg-indigo-950/20':'border-slate-700 bg-slate-800/30'}`}>
               <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700/50">
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${selectedLayout ? 'bg-indigo-500 text-white' : 'bg-indigo-600 text-white'}`}>
-                  {selectedLayout ? '✓' : '2'}
-                </span>
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${layout?'bg-indigo-500 text-white':'bg-indigo-600 text-white'}`}>{layout?'✓':'2'}</span>
                 <span className="text-sm font-semibold text-white">Pilih Layout</span>
-                <span className="text-xs text-slate-400 bg-indigo-600/20 px-2 py-0.5 rounded-full">
-                  {matchingLayouts.length} layout untuk {filledCount} foto
-                </span>
+                <span className="text-xs text-slate-400 bg-indigo-600/20 px-2 py-0.5 rounded-full">{matchLayouts.length} layout untuk {filledCount} foto</span>
               </div>
-              <div className="p-3 space-y-3">
-                {/* Filter bentuk */}
+              <div className="p-3 space-y-2">
                 <div className="flex gap-1.5 flex-wrap">
-                  <button type="button" onClick={() => setFilterCat(null)}
-                    className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${filterCat === null ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>Semua</button>
-                  {categories.map(cat => {
-                    const hasAny = COLLAGE_LAYOUTS.some(l => l.photoCount === filledCount && l.category === cat);
-                    if (!hasAny) return null;
+                  {['kotak','diagonal','chevron','gelombang'].map(cat=>{
+                    const has=LAYOUTS.some(l=>l.photoCount===filledCount&&l.category===cat);
+                    return has&&<button key={cat} type="button" onClick={()=>setCatF(cat===catF?null:cat)}
+                      className={`px-2 py-1 rounded-full text-xs font-semibold ${catF===cat?'bg-purple-600 text-white':'bg-slate-700 text-slate-400'}`}>{CAT_LABELS[cat]}</button>;
+                  })}
+                </div>
+                <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-56 overflow-y-auto">
+                  {matchLayouts.map(l=>{
+                    const active=layout?.id===l.id;
+                    const isShaped=l.cells.some(c=>c.clip);
+                    const CA=['#4338ca','#4f46e5','#6366f1','#818cf8','#3730a3','#c7d2fe'];
+                    const CI=['#334155','#475569','#64748b','#1e293b','#374151','#52525b'];
                     return (
-                      <button key={cat} type="button" onClick={() => setFilterCat(cat === filterCat ? null : cat)}
-                        className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${filterCat === cat ? 'bg-purple-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>
-                        {CATEGORY_LABELS[cat]}
+                      <button key={l.id} type="button" onClick={()=>{
+                        setLayout(l); setSelCell(null);
+                        setCells(l.cells.map((_,i)=>{const s=staged[i];return s?{imageSrc:s.imageSrc,imgNaturalW:s.imgNaturalW,imgNaturalH:s.imgNaturalH,scale:1,offsetX:0,offsetY:0}:EMPTY_CELL();}));
+                      }} title={l.name}
+                        className={`rounded-lg overflow-hidden ${active?'ring-2 ring-indigo-500 ring-offset-1 ring-offset-slate-800 scale-105':'ring-1 ring-slate-600 hover:ring-indigo-400'}`}>
+                        <div className="aspect-square bg-black relative overflow-hidden">
+                          {isShaped?(
+                            <svg viewBox="0 0 100 100" className="w-full h-full">
+                              {l.cells.map((cell,ci)=>{
+                                const fill=active?CA[ci%CA.length]:CI[ci%CI.length];
+                                const pts=cell.clip!.split(',').map(p=>p.trim().split(' ').join(',')).join(' ');
+                                return <polygon key={ci} points={pts} fill={fill} stroke="#000" strokeWidth="2"/>;
+                              })}
+                            </svg>
+                          ):(
+                            l.cells.map((cell,ci)=>(
+                              <div key={ci} className="absolute" style={{left:`${cell.x}%`,top:`${cell.y}%`,width:`${cell.w}%`,height:`${cell.h}%`,background:active?CA[ci%CA.length]:CI[ci%CI.length],border:'1px solid #000'}}/>
+                            ))
+                          )}
+                        </div>
+                        <div className="bg-slate-800 px-1 py-0.5"><p className="text-[8px] text-slate-400 truncate text-center">{l.name}</p></div>
                       </button>
                     );
                   })}
                 </div>
-
-                {matchingLayouts.length === 0 ? (
-                  <p className="text-xs text-slate-500 text-center py-4">Tidak ada layout untuk {filledCount} foto dengan filter ini</p>
-                ) : (
-                  <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-56 overflow-y-auto pr-1">
-                    {matchingLayouts.map(layout => {
-                      const isActive = selectedLayout?.id === layout.id;
-                      // Warna alternating kontras supaya batas antar sel jelas
-                      const CA = ['#4338ca','#818cf8','#312e81','#a5b4fc','#3730a3','#6366f1'];
-                      const CI = ['#475569','#94a3b8','#1e293b','#64748b','#334155','#7f8ea3'];
-                      const STROKE = '#000000'; // garis tegas hitam
-                      return (
-                        <button key={layout.id} type="button" onClick={() => handleSelectLayout(layout)} title={layout.name}
-                          className={`group rounded-lg overflow-hidden transition-all ${isActive ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-slate-800 scale-105' : 'ring-1 ring-slate-600 hover:ring-indigo-400'}`}>
-                          {/* SVG thumbnail — polygon presisi untuk semua bentuk */}
-                          <div className="aspect-square bg-black">
-                            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style={{display:'block',width:'100%',height:'100%'}}>
-                              {layout.cells.map((cell, ci) => {
-                                const fill = isActive ? CA[ci % CA.length] : CI[ci % CI.length];
-                                if (cell.clip) {
-                                  const pts = cell.clip.split(',').map(p=>p.trim().split(' ').join(',')).join(' ');
-                                  return <polygon key={ci} points={pts} fill={fill} stroke={STROKE} strokeWidth="2"/>;
-                                }
-                                return <rect key={ci} x={cell.x+0.75} y={cell.y+0.75} width={cell.w-1.5} height={cell.h-1.5} fill={fill} stroke={STROKE} strokeWidth="1.5"/>;
-                              })}
-                            </svg>
-                          </div>
-                          <div className="bg-slate-800 px-1 py-0.5">
-                            <p className="text-[8px] text-slate-400 truncate text-center">{layout.name}</p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
             </div>
           )}
 
-          {/* ── STEP 3: PENGATURAN ── */}
-          {selectedLayout && (
-            <div className="rounded-xl border border-slate-700 bg-slate-800/30 space-y-0 overflow-hidden">
+          {/* Step 3: Pengaturan */}
+          {layout&&(
+            <div className="rounded-xl border border-slate-700 bg-slate-800/30 overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700/50">
                 <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-indigo-600 text-white">3</span>
                 <span className="text-sm font-semibold text-white">Pengaturan</span>
               </div>
               <div className="p-4 space-y-4">
-
-                {/* Aspek Rasio */}
+                {/* AR */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">Aspek Rasio Output</label>
+                  <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wide">Aspek Rasio</label>
                   <div className="grid grid-cols-3 gap-1.5">
-                    {ASPECT_OPTIONS.map(opt => (
-                      <button key={opt.value} type="button" onClick={() => setAspectRatio(opt.value)}
-                        className={`py-1.5 px-1 rounded-lg text-center transition-all border ${aspectRatio === opt.value ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:border-indigo-500/50'}`}>
-                        <div className="text-xs font-bold">{opt.label}</div>
-                        <div className="text-[9px] opacity-70">{opt.sub}</div>
+                    {ASPECT_OPTIONS.map(o=>(
+                      <button key={o.v} type="button" onClick={()=>setAr(o.v)}
+                        className={`py-1.5 rounded-lg text-center border ${ar===o.v?'bg-indigo-600 border-indigo-500 text-white':'bg-slate-700/60 border-slate-600 text-slate-300'}`}>
+                        <div className="text-xs font-bold">{o.l}</div><div className="text-[9px] opacity-70">{o.s}</div>
                       </button>
                     ))}
                   </div>
                 </div>
-
                 {/* Gap */}
                 <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Jarak Antar Foto</label>
+                  <div className="flex justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Jarak</label>
                     <span className="text-xs font-bold text-indigo-400 bg-slate-700 px-2 py-0.5 rounded">{gap}px</span>
                   </div>
-                  <input type="range" min={0} max={24} value={gap} onChange={e => setGap(Number(e.target.value))}
-                    className="w-full h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
-                  {selectedLayout.cells.some(c => c.clip) && (
-                    <p className="text-[10px] text-amber-400/60 mt-1">⚡ Jarak tidak berlaku untuk layout berbentuk</p>
-                  )}
+                  <input type="range" min={0} max={24} value={gap} onChange={e=>setGap(+e.target.value)} className="w-full h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
                 </div>
-
                 {/* Background */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Warna Background</label>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Background</label>
                   <div className="flex items-center gap-2 mb-1.5">
-                    <label className="w-8 h-8 rounded-lg cursor-pointer border-2 border-slate-600 hover:border-indigo-500 overflow-hidden flex-shrink-0" style={{ background: bgColor }}>
-                      <input type="color" value={bgColor} onChange={e => setBgColor(e.target.value)} className="opacity-0 w-0 h-0" />
+                    <label className="w-8 h-8 rounded-lg cursor-pointer border-2 border-slate-600 overflow-hidden flex-shrink-0" style={{background:bg}}>
+                      <input type="color" value={bg} onChange={e=>setBg(e.target.value)} className="opacity-0 w-0 h-0"/>
                     </label>
-                    <input type="text" value={bgColor} onChange={e => setBgColor(e.target.value)}
-                      className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-xs font-mono focus:outline-none focus:border-indigo-500"/>
+                    <input type="text" value={bg} onChange={e=>setBg(e.target.value)} className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-xs font-mono focus:outline-none focus:border-indigo-500"/>
                   </div>
                   <div className="flex gap-1.5 flex-wrap">
-                    {BG_PRESETS.map(c => (
-                      <button key={c} type="button" onClick={() => setBgColor(c)}
-                        className={`w-6 h-6 rounded-full border-2 transition-all hover:scale-110 ${bgColor === c ? 'border-white scale-110' : 'border-slate-600'}`}
-                        style={{ background: c }}/>
+                    {BG_PRESETS.map(c=><button key={c} type="button" onClick={()=>setBg(c)} className={`w-6 h-6 rounded-full border-2 ${bg===c?'border-white scale-110':'border-slate-600'}`} style={{background:c}}/>)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Teks & Stiker — hanya tampil setelah pilih layout */}
+          {layout&&(
+            <div className="rounded-xl border border-slate-700 bg-slate-800/30 overflow-hidden">
+              <div className="flex border-b border-slate-700">
+                {(['teks','stiker'] as const).map(tab=>(
+                  <button key={tab} type="button" onClick={()=>setActiveTab(tab)}
+                    className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${activeTab===tab?'bg-indigo-600/30 text-white border-b-2 border-indigo-500':'text-slate-400 hover:text-slate-300'}`}>
+                    {tab==='teks'?'✏️ Teks':'🎨 Stiker'}
+                  </button>
+                ))}
+              </div>
+              {activeTab==='teks'&&<TextForm onAdd={addLayer}/>}
+              {activeTab==='stiker'&&(
+                <div className="p-3 space-y-2">
+                  <div className="flex gap-1.5 flex-wrap">
+                    {STICKERS.map(g=>(
+                      <button key={g.group} type="button" onClick={()=>setStickerGrp(g.group)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-semibold ${stickerGrp===g.group?'bg-purple-600 text-white':'bg-slate-700 text-slate-400'}`}>{g.group}</button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-6 gap-1.5">
+                    {STICKERS.find(g=>g.group===stickerGrp)?.items.map(sym=>(
+                      <button key={sym} type="button"
+                        onClick={()=>addLayer({kind:'sticker',id:`s_${Date.now()}`,symbol:sym,size:48,x:50,y:50,rotation:0})}
+                        className="aspect-square rounded-lg bg-slate-700 hover:bg-slate-600 text-xl flex items-center justify-center">
+                        {sym}
+                      </button>
                     ))}
                   </div>
                 </div>
+              )}
+            </div>
+          )}
 
+          {/* Layer list */}
+          {layout&&layers.length>0&&(
+            <div className="rounded-xl border border-slate-700 bg-slate-800/30 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/50">
+                <span className="text-xs font-semibold text-slate-300">Layer ({layers.length})</span>
+                <button type="button" onClick={()=>setLayers([])} className="text-[10px] text-red-400/60 hover:text-red-400">Hapus Semua</button>
+              </div>
+              <div className="p-2 space-y-1 max-h-40 overflow-y-auto">
+                {[...layers].reverse().map(layer=>{
+                  const isSel=selLayer===layer.id;
+                  return (
+                    <div key={layer.id} onClick={()=>setSelLayer(isSel?null:layer.id)}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer ${isSel?'bg-indigo-600/30 border border-indigo-500/40':'bg-slate-700/40 hover:bg-slate-700/60'}`}>
+                      <span className="text-sm">{layer.kind==='sticker'?layer.symbol:'✏️'}</span>
+                      <span className="text-xs text-slate-300 truncate flex-1">{layer.kind==='text'?layer.text:`Stiker ${layer.symbol}`}</span>
+                      {isSel&&<input type="range" min={12} max={150} value={layer.size} onClick={e=>e.stopPropagation()}
+                        onChange={e=>{e.stopPropagation();updateLayer(layer.id,{size:+e.target.value});}}
+                        className="w-16 h-1.5 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-600"/>}
+                      <button type="button" onClick={e=>{e.stopPropagation();removeLayer(layer.id);}}
+                        className="w-5 h-5 bg-red-600/60 hover:bg-red-500 rounded text-[10px] text-white flex items-center justify-center">✕</button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
 
           {/* Export */}
-          {selectedLayout && (
-            <div className="pt-1">
-              <button type="button" onClick={handleExport} disabled={isExporting}
-                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg hover:from-indigo-500 hover:to-purple-500 transition-all disabled:opacity-50 flex items-center justify-center gap-2.5">
-                {isExporting
-                  ? <><svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Mengekspor...</>
-                  : <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Download Kolase (PNG)</>
-                }
-              </button>
-              <p className="text-center text-xs text-slate-500 mt-1.5">Output 1080px × aspek rasio terpilih</p>
-            </div>
+          {layout&&(
+            <button type="button" onClick={handleExport} disabled={exporting}
+              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-3.5 rounded-xl shadow-lg hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 flex items-center justify-center gap-2">
+              {exporting?<><svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Mengekspor...</>
+              :<><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Download Kolase (PNG)</>}
+            </button>
           )}
         </div>
 
-        {/* ═══ PANEL KANAN: Preview ═══ */}
+        {/* ── KANAN: Preview ── */}
         <div>
-          {!selectedLayout ? (
-            /* Placeholder saat belum pilih layout */
-            <div className="w-full rounded-xl overflow-hidden ring-1 ring-slate-700 bg-slate-800/50 flex flex-col items-center justify-center py-16 gap-4 text-center px-6"
-              style={{ minHeight: '280px' }}>
-              {filledCount === 0 ? (
-                <>
-                  <svg className="w-12 h-12 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                  </svg>
-                  <div>
-                    <p className="text-slate-400 font-semibold">Upload foto dulu</p>
-                    <p className="text-xs text-slate-600 mt-1">Layout akan muncul otomatis sesuai jumlah foto</p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="text-4xl">🖼️</div>
-                  <div>
-                    <p className="text-slate-400 font-semibold">{filledCount} foto siap</p>
-                    <p className="text-xs text-slate-600 mt-1">Pilih layout dari panel kiri untuk melihat preview</p>
-                  </div>
-                </>
-              )}
+          {!layout?(
+            <div className="w-full rounded-xl ring-1 ring-slate-700 bg-slate-800/50 flex flex-col items-center justify-center py-16 gap-3 text-center px-6 min-h-64">
+              <div className="text-5xl">{filledCount>0?'🖼️':'📷'}</div>
+              <p className="text-slate-400 font-semibold">{filledCount>0?`${filledCount} foto siap`:'Upload foto dulu'}</p>
+              <p className="text-xs text-slate-600">{filledCount>0?'Pilih layout dari panel kiri':'Layout muncul otomatis sesuai jumlah foto'}</p>
             </div>
-          ) : (
+          ):(
             <>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Preview Kolase</span>
+                <span className="text-sm font-semibold text-slate-300 uppercase tracking-wide">Preview</span>
                 <div className="flex items-center gap-2">
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${
-                    selectedLayout.category === 'diagonal'  ? 'bg-amber-600/30 text-amber-300' :
-                    selectedLayout.category === 'chevron'   ? 'bg-green-600/30 text-green-300' :
-                    selectedLayout.category === 'gelombang' ? 'bg-blue-600/30 text-blue-300' :
-                    'bg-slate-600/30 text-slate-400'}`}>
-                    {CATEGORY_LABELS[selectedLayout.category]}
-                  </span>
-                  <span className="text-xs text-slate-500 italic">{selectedLayout.name}</span>
-                  <button type="button" onClick={() => { setSelectedLayout(null); setCells([]); setSelectedCell(null); }}
-                    className="text-[10px] text-slate-500 hover:text-red-400 transition-colors">✕ ganti</button>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${layout.category==='diagonal'?'bg-amber-600/30 text-amber-300':layout.category==='chevron'?'bg-green-600/30 text-green-300':layout.category==='gelombang'?'bg-blue-600/30 text-blue-300':'bg-slate-600/30 text-slate-400'}`}>{CAT_LABELS[layout.category]}</span>
+                  <button type="button" onClick={()=>{setLayout(null);setCells([]);setSelCell(null);}} className="text-[10px] text-slate-500 hover:text-red-400">✕ ganti</button>
                 </div>
               </div>
 
-              {/* Preview — pakai position relative + aspect-ratio. 
-                  TIDAK overflow-hidden di sini karena akan memotong layer teks.
-                  Tiap foto sudah di-clip di dalam CellEditor masing-masing. */}
-              {/* ref di SINI — outer wrapper, bukan inner div */}
-              <div
-                ref={previewRef}
+              {/* Preview canvas — outer: relative, NO overflow-hidden */}
+              <div ref={previewRef}
                 className="w-full rounded-xl shadow-2xl ring-1 ring-slate-700"
-                style={{ position: 'relative', paddingBottom: `${(arH / arW) * 100}%` }}
-                onClick={() => setSelectedLayer(null)}
-              >
-                {/* Foto — overflow:hidden untuk clip foto ke batas */}
-                <div
-                  className="absolute inset-0 rounded-xl overflow-hidden"
-                  style={{ background: bgColor }}
-                >
-                  {selectedLayout.cells.map((cell, i) => (
-                    <div key={`${selectedLayout.id}-${i}`} style={getCellStyle(cell)}>
-                      <CellEditor
-                        cs={cells[i] ?? DEFAULT_CELL()} idx={i}
-                        isDragOver={dragOverCell === i} isSelected={selectedCell === i}
-                        onSelect={setSelectedCell} onUpdate={updateCell}
-                        onUpload={(i, f) => uploadToStaged(i, f)} onRemove={handleRemoveCell}
-                        onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-                      />
+                style={{position:'relative',paddingBottom:`${(arH/arW)*100}%`}}
+                onClick={()=>{setSelLayer(null);setSelCell(null);}}>
+
+                {/* Foto — overflow:hidden untuk clip */}
+                <div className="absolute inset-0 rounded-xl overflow-hidden" style={{background:bg}}>
+                  {layout.cells.map((cell,i)=>(
+                    <div key={`${layout.id}-${i}`} style={getCellStyle(cell)}>
+                      <CellEditor cs={cells[i]??EMPTY_CELL()} idx={i}
+                        isDragOver={dropOver===i} isSelected={selCell===i}
+                        onSelect={setSelCell} onUpdate={updateCell}
+                        onUpload={uploadFile} onRemove={i=>{updateCell(i,EMPTY_CELL());setSelCell(null);}}
+                        onDragOver={(e,i)=>{e.preventDefault();setDropOver(i);}} onDragLeave={()=>setDropOver(null)}
+                        onDrop={(e,i)=>{e.preventDefault();setDropOver(null);const f=e.dataTransfer.files[0];if(f)uploadFile(i,f);}}/>
                     </div>
                   ))}
                 </div>
 
-                {/* Layer teks & stiker — langsung di dalam outer wrapper, tanpa container pointer-blocking */}
-                {layers.map(layer => {
-                  const isSel = selectedLayer === layer.id;
-                  const isText = layer.kind === 'text';
-                  const tl = layer as TextLayer;
-                  const sl = layer as StickerLayer;
-                  const fontCss = isText
-                    ? (FONTS.find(f => f.id === tl.font)?.css || 'Arial, sans-serif')
-                    : 'serif';
+                {/* Layer overlay — NO overflow:hidden, events live */}
+                {layers.map(layer=>{
+                  const isSel=selLayer===layer.id;
+                  const isText=layer.kind==='text';
+                  const tl=layer as TextLayer;
+                  const sl=layer as StickerLayer;
                   return (
-                    <div
-                      key={layer.id}
-                      style={{
-                        position: 'absolute',
-                        left: `${layer.x}%`,
-                        top: `${layer.y}%`,
-                        transform: `translate(-50%, -50%) rotate(${layer.rotation}deg)`,
-                        cursor: 'grab',
-                        userSelect: 'none',
-                        zIndex: 10,
-                        padding: '3px 6px',
-                        borderRadius: '4px',
-                        boxSizing: 'border-box',
-                        outline: isSel ? '2px dashed #818cf8' : 'none',
-                        outlineOffset: '2px',
-                      }}
-                      onMouseDown={e => { e.stopPropagation(); handleLayerMouseDown(e, layer.id, layer.x, layer.y); }}
-                      onTouchStart={e => { e.stopPropagation(); handleLayerTouchStart(e, layer.id, layer.x, layer.y); }}
-                      onTouchMove={handleLayerTouchMove}
-                      onTouchEnd={() => { layerDrag.current = null; }}
-                    >
-                      {isText ? (
-                        <span style={{
-                          display: 'block',
-                          fontFamily: fontCss,
-                          fontSize: `${layer.size}px`,
-                          fontWeight: tl.bold ? 'bold' : 'normal',
-                          fontStyle: tl.italic ? 'italic' : 'normal',
-                          color: tl.color,
-                          textShadow: tl.shadow ? '2px 2px 6px rgba(0,0,0,1), -1px -1px 3px rgba(0,0,0,0.8)' : 'none',
-                          whiteSpace: 'nowrap',
-                          lineHeight: 1.2,
-                        }}>
-                          {tl.text}
-                        </span>
-                      ) : (
-                        <span style={{
-                          display: 'block',
-                          fontSize: `${layer.size}px`,
-                          lineHeight: 1,
-                        }}>
-                          {sl.symbol}
-                        </span>
+                    <div key={layer.id}
+                      style={{position:'absolute',left:`${layer.x}%`,top:`${layer.y}%`,transform:`translate(-50%,-50%) rotate(${layer.rotation}deg)`,cursor:'grab',userSelect:'none',touchAction:'none',zIndex:10,padding:'4px 8px',outline:isSel?'2px dashed #818cf8':'none',outlineOffset:'3px'}}
+                      onMouseDown={e=>onLayerMD(e,layer.id,layer.x,layer.y)}
+                      onTouchStart={e=>onLayerTS(e,layer.id,layer.x,layer.y)}>
+                      {isText?(
+                        <span style={{display:'block',fontFamily:FONTS.find(f=>f.id===tl.font)?.css||'Arial',fontSize:`${tl.size}px`,fontWeight:tl.bold?'bold':'normal',fontStyle:tl.italic?'italic':'normal',color:tl.color,textShadow:tl.shadow?'2px 2px 6px rgba(0,0,0,1),-1px -1px 3px rgba(0,0,0,1)':'none',whiteSpace:'nowrap',lineHeight:1.2,pointerEvents:'none'}}>{tl.text}</span>
+                      ):(
+                        <span style={{display:'block',fontSize:`${sl.size}px`,lineHeight:1,pointerEvents:'none'}}>{sl.symbol}</span>
                       )}
-                      {isSel && (
-                        <button
-                          type="button"
-                          onClick={e => { e.stopPropagation(); removeLayer(layer.id); }}
-                          style={{
-                            position: 'absolute',
-                            top: -10, right: -10,
-                            width: 20, height: 20,
-                            background: '#ef4444',
-                            borderRadius: '50%',
-                            border: '2px solid white',
-                            color: 'white',
-                            fontSize: 10,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            zIndex: 20,
-                          }}
-                        >✕</button>
-                      )}
+                      {isSel&&<button type="button" onMouseDown={e=>e.stopPropagation()} onClick={e=>{e.stopPropagation();removeLayer(layer.id);}}
+                        style={{position:'absolute',top:-10,right:-10,width:20,height:20,background:'#ef4444',borderRadius:'50%',border:'2px solid white',color:'white',fontSize:10,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',zIndex:20}}>✕</button>}
                     </div>
                   );
                 })}
-              </div>{/* end preview wrapper */}
+              </div>
 
-              {/* Progress dots */}
+              {/* Progress */}
               <div className="flex items-center gap-2 mt-2">
-                <div className="flex gap-1">
-                  {selectedLayout.cells.map((_, i) => (
-                    <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${cells[i]?.imageSrc ? (selectedCell === i ? 'bg-indigo-400 w-5' : 'bg-indigo-600 w-4') : 'bg-slate-600 w-2'}`}/>
-                  ))}
-                </div>
-                <span className="text-xs text-slate-500">{cells.filter(c=>c?.imageSrc).length} / {selectedLayout.cells.length} foto</span>
+                <div className="flex gap-1">{layout.cells.map((_,i)=><div key={i} className={`h-1.5 rounded-full transition-all ${cells[i]?.imageSrc?(selCell===i?'bg-indigo-400 w-5':'bg-indigo-600 w-4'):'bg-slate-600 w-2'}`}/>)}</div>
+                <span className="text-xs text-slate-500">{cells.filter(c=>c?.imageSrc).length}/{layout.cells.length}</span>
               </div>
 
-              {/* ZOOM CONTROLS DI BAWAH PREVIEW */}
-              <div className={`mt-3 rounded-xl border transition-all duration-200 overflow-hidden ${selCs?.imageSrc ? 'border-indigo-500/50 bg-indigo-950/30' : 'border-slate-700/50 bg-slate-800/30'}`}>
-                <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-1.5 h-1.5 rounded-full ${selCs?.imageSrc ? 'bg-indigo-400 animate-pulse' : 'bg-slate-600'}`}/>
-                    <span className="text-xs font-semibold text-slate-300">
-                      {selectedCell !== null && selCs?.imageSrc ? `Zoom Foto ${selectedCell + 1}` : 'Klik foto untuk zoom & geser'}
-                    </span>
-                  </div>
-                  {selCs?.imageSrc && (
+              {/* Zoom control */}
+              {selCs?.imageSrc&&(
+                <div className="mt-3 rounded-xl border border-indigo-500/50 bg-indigo-950/30 overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-indigo-400 font-mono bg-slate-700 px-2 py-0.5 rounded">
-                        {(selCs.scale * 100).toFixed(0)}%
-                      </span>
-                      <button type="button"
-                        onClick={() => updateCell(selectedCell!, { scale: 1, offsetX: 0, offsetY: 0 })}
-                        className="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded bg-slate-700/50 hover:bg-slate-700 transition-colors">
-                        ↺ Reset
-                      </button>
+                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"/>
+                      <span className="text-xs font-semibold text-slate-300">Zoom Foto {(selCell??0)+1}</span>
                     </div>
-                  )}
-                </div>
-                <div className="px-3 py-3">
-                  {selCs?.imageSrc ? (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center gap-2">
-                        <button type="button"
-                          onClick={() => handleScaleChange(selectedCell!, Math.max(0.3, selCs.scale - 0.1))}
-                          className="w-10 h-10 flex-shrink-0 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white rounded-xl flex items-center justify-center text-xl font-bold transition-colors select-none touch-manipulation">
-                          −
-                        </button>
-                        <input type="range" min={30} max={300} step={1}
-                          value={Math.round(selCs.scale * 100)}
-                          onChange={e => handleScaleChange(selectedCell!, Number(e.target.value) / 100)}
-                          className="flex-1 h-3 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
-                        <button type="button"
-                          onClick={() => handleScaleChange(selectedCell!, Math.min(3, selCs.scale + 0.1))}
-                          className="w-10 h-10 flex-shrink-0 bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-white rounded-xl flex items-center justify-center text-xl font-bold transition-colors select-none touch-manipulation">
-                          +
-                        </button>
-                      </div>
-                      <div className="flex justify-between text-[10px] text-slate-500 px-12">
-                        <span>Kecil</span>
-                        <span>✋ Drag foto untuk geser</span>
-                        <span>Zoom</span>
-                      </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-indigo-400 font-mono bg-slate-700 px-2 py-0.5 rounded">{(selCs.scale*100).toFixed(0)}%</span>
+                      <button type="button" onClick={()=>updateCell(selCell!,{scale:1,offsetX:0,offsetY:0})} className="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded bg-slate-700/50">↺</button>
                     </div>
-                  ) : (
-                    <p className="text-xs text-slate-500 text-center py-1">Klik foto di preview, lalu zoom di sini</p>
-                  )}
+                  </div>
+                  <div className="px-3 py-3 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={()=>zoomCell(selCell!,Math.max(0.3,selCs.scale-0.1))} className="w-10 h-10 flex-shrink-0 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xl font-bold touch-manipulation">−</button>
+                      <input type="range" min={30} max={300} step={1} value={Math.round(selCs.scale*100)} onChange={e=>zoomCell(selCell!,+e.target.value/100)} className="flex-1 h-3 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
+                      <button type="button" onClick={()=>zoomCell(selCell!,Math.min(3,selCs.scale+0.1))} className="w-10 h-10 flex-shrink-0 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xl font-bold touch-manipulation">+</button>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-500 px-12"><span>Kecil</span><span>✋ Drag untuk geser</span><span>Zoom</span></div>
+                  </div>
                 </div>
-              </div>
-
-              <div className="mt-2 text-[10px] text-slate-600 text-center">
-                Layout diagonal/gelombang: ubah warna background untuk efek pemisah berbeda
-              </div>
+              )}
             </>
           )}
         </div>
