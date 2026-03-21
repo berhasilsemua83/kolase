@@ -412,7 +412,7 @@ const CollageEditor: React.FC = () => {
     return () => window.removeEventListener('mousedown', handler);
   }, []);
 
-  // Upload ke staging
+  // Upload satu file ke slot tertentu
   const uploadToStaged = useCallback((i: number, file: File) => {
     if (!file.type.startsWith('image/')) return;
     const reader = new FileReader();
@@ -429,6 +429,37 @@ const CollageEditor: React.FC = () => {
       img.src = src;
     };
     reader.readAsDataURL(file);
+  }, []);
+
+  // Upload banyak file sekaligus (multi-select dari galeri HP)
+  const uploadMultiple = useCallback((files: FileList) => {
+    const imgs = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, 6);
+    imgs.forEach((file, fi) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const src = e.target?.result as string;
+        const img = new Image();
+        img.onload = () => {
+          setStaged(prev => {
+            // Cari slot kosong mulai dari fi, atau expand array
+            const next = [...prev];
+            // Isi slot kosong secara berurutan
+            let slotIdx = -1;
+            for (let k = 0; k < next.length; k++) {
+              if (!next[k]) { slotIdx = k; break; }
+            }
+            if (slotIdx === -1) {
+              if (next.length < 6) { next.push(null); slotIdx = next.length - 1; }
+              else return next; // penuh
+            }
+            next[slotIdx] = { imageSrc: src, imgNaturalW: img.naturalWidth, imgNaturalH: img.naturalHeight };
+            return next;
+          });
+        };
+        img.src = src;
+      };
+      reader.readAsDataURL(file);
+    });
   }, []);
 
   // Tambah slot foto
@@ -600,12 +631,23 @@ const CollageEditor: React.FC = () => {
                 <span className="text-sm font-semibold text-white">Upload Foto</span>
                 <span className="text-xs text-slate-500">({filledCount}/{staged.length} terisi · maks 6)</span>
               </div>
-              {staged.length < 6 && (
-                <button type="button" onClick={addSlot}
-                  className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors">
-                  + Tambah slot
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {/* Upload banyak sekaligus */}
+                <label className="cursor-pointer text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-8-8l-4 4m0 0l4 4m-4-4h12"/></svg>
+                  Upload semua
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={e => {
+                    if (e.target.files?.length) uploadMultiple(e.target.files);
+                    e.target.value = '';
+                  }}/>
+                </label>
+                {staged.length < 6 && (
+                  <button type="button" onClick={addSlot}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors">
+                    + Slot
+                  </button>
+                )}
+              </div>
             </div>
             <div className="p-3">
               <div className="grid grid-cols-3 gap-2">
@@ -619,7 +661,7 @@ const CollageEditor: React.FC = () => {
                         }`}
                         onDragOver={e => { e.preventDefault(); setDragOverStaged(i); }}
                         onDragLeave={() => setDragOverStaged(null)}
-                        onDrop={e => { e.preventDefault(); setDragOverStaged(null); const f = e.dataTransfer.files[0]; if (f) uploadToStaged(i, f); }}
+                        onDrop={e => { e.preventDefault(); setDragOverStaged(null); Array.from(e.dataTransfer.files).forEach((f, fi) => { if (i + fi < 6) uploadToStaged(i + fi, f); }); }}
                       >
                         {photo ? (
                           <>
@@ -627,14 +669,36 @@ const CollageEditor: React.FC = () => {
                             <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
                               <label className="cursor-pointer p-1 bg-slate-700 hover:bg-slate-600 rounded text-[10px] text-white">
                                 Ganti
-                                <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadToStaged(i, e.target.files[0]); e.target.value=''; }}/>
+                                <input type="file" accept="image/*" multiple className="hidden" onChange={e => {
+                              if (!e.target.files?.length) return;
+                              const files = Array.from(e.target.files);
+                              // Auto-expand slot jika perlu
+                              setStaged(prev => {
+                                let next = [...prev];
+                                while (next.length < Math.min(6, i + files.length)) next.push(null);
+                                return next;
+                              });
+                              files.forEach((f, fi) => { if (i + fi < 6) uploadToStaged(i + fi, f); });
+                              e.target.value='';
+                            }}/>
                               </label>
                               <button type="button" onClick={() => removeSlot(i)} className="p-1 bg-red-600/80 hover:bg-red-600 rounded text-[10px] text-white">Hapus</button>
                             </div>
                           </>
                         ) : (
                           <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
-                            <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) uploadToStaged(i, e.target.files[0]); e.target.value=''; }}/>
+                            <input type="file" accept="image/*" multiple className="hidden" onChange={e => {
+                              if (!e.target.files?.length) return;
+                              const files = Array.from(e.target.files);
+                              // Auto-expand slot jika perlu
+                              setStaged(prev => {
+                                let next = [...prev];
+                                while (next.length < Math.min(6, i + files.length)) next.push(null);
+                                return next;
+                              });
+                              files.forEach((f, fi) => { if (i + fi < 6) uploadToStaged(i + fi, f); });
+                              e.target.value='';
+                            }}/>
                             <svg className="w-5 h-5 text-slate-500 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4"/>
                             </svg>
@@ -648,11 +712,48 @@ const CollageEditor: React.FC = () => {
                   );
                 })}
               </div>
+              {/* Tombol upload banyak sekaligus */}
+              <label className="flex items-center justify-center gap-2 w-full mt-2 py-2 rounded-lg border border-dashed border-indigo-500/40 bg-indigo-950/20 hover:bg-indigo-950/40 cursor-pointer transition-colors">
+                <input type="file" accept="image/*" multiple className="hidden" onChange={e => {
+                  if (!e.target.files) return;
+                  const files = Array.from(e.target.files).slice(0, 6);
+                  // Isi slot kosong dulu, lalu slot yang sudah ada
+                  setStaged(prev => {
+                    let next = [...prev];
+                    // Pastikan cukup slot
+                    while (next.length < Math.min(6, files.length)) next.push(null);
+                    let fileIdx = 0;
+                    // Isi slot kosong dulu
+                    for (let si = 0; si < next.length && fileIdx < files.length; si++) {
+                      if (!next[si]) { fileIdx++; } // akan diisi via uploadToStaged
+                    }
+                    return next;
+                  });
+                  files.forEach((f, fi) => {
+                    // Cari slot kosong ke-fi atau gunakan slot baru
+                    setStaged(prev => {
+                      const emptySlots = prev.map((s, idx) => s === null ? idx : -1).filter(idx => idx >= 0);
+                      const targetSlot = emptySlots[fi] !== undefined ? emptySlots[fi] : fi;
+                      if (targetSlot >= 6) return prev;
+                      const next = [...prev];
+                      while (next.length <= targetSlot) next.push(null);
+                      return next;
+                    });
+                    uploadToStaged(fi < staged.length ? (staged.findIndex((s,i) => !s && i >= fi) >= 0 ? staged.findIndex((s,i) => !s && i >= fi) : fi) : fi, f);
+                  });
+                  e.target.value='';
+                }}/>
+                <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                </svg>
+                <span className="text-xs text-indigo-400 font-medium">Upload beberapa foto sekaligus</span>
+                <span className="text-[10px] text-slate-500">(pilih banyak di galeri)</span>
+              </label>
               {filledCount === 0 && (
-                <p className="text-[10px] text-slate-500 text-center mt-2">Upload foto dulu — layout akan muncul otomatis sesuai jumlah foto</p>
+                <p className="text-[10px] text-slate-500 text-center mt-1">Layout muncul otomatis sesuai jumlah foto yang diupload</p>
               )}
               {filledCount > 0 && !selectedLayout && (
-                <p className="text-[10px] text-indigo-400 text-center mt-2 animate-pulse">
+                <p className="text-[10px] text-indigo-400 text-center mt-1 animate-pulse">
                   ✓ {filledCount} foto siap — pilih layout di bawah
                 </p>
               )}
@@ -694,20 +795,25 @@ const CollageEditor: React.FC = () => {
                   <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 max-h-56 overflow-y-auto pr-1">
                     {matchingLayouts.map(layout => {
                       const isActive = selectedLayout?.id === layout.id;
-                      const isShaped = layout.cells.some(c => c.clip);
+                      // Warna alternating kontras supaya batas antar sel jelas
+                      const CA = ['#4338ca','#818cf8','#312e81','#a5b4fc','#3730a3','#6366f1'];
+                      const CI = ['#475569','#94a3b8','#1e293b','#64748b','#334155','#7f8ea3'];
+                      const STROKE = '#000000'; // garis tegas hitam
                       return (
                         <button key={layout.id} type="button" onClick={() => handleSelectLayout(layout)} title={layout.name}
                           className={`group rounded-lg overflow-hidden transition-all ${isActive ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-slate-800 scale-105' : 'ring-1 ring-slate-600 hover:ring-indigo-400'}`}>
-                          <div className={`aspect-square relative overflow-hidden ${isShaped ? 'bg-slate-950' : 'bg-slate-900'}`}>
-                            {layout.cells.map((cell, ci) => (
-                              <div key={ci}
-                                className={`absolute ${isActive ? 'bg-indigo-500/80' : 'bg-slate-500/70 group-hover:bg-indigo-400/60'}`}
-                                style={cell.clip
-                                  ? { left:0, top:0, width:'100%', height:'100%', clipPath: toClip(cell.clip), outline:'0.5px solid rgba(15,23,42,0.8)', outlineOffset:'-0.5px' }
-                                  : { left:`${cell.x}%`, top:`${cell.y}%`, width:`${cell.w}%`, height:`${cell.h}%`, border:'1px solid rgba(15,23,42,0.8)' }
+                          {/* SVG thumbnail — polygon presisi untuk semua bentuk */}
+                          <div className="aspect-square bg-black">
+                            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style={{display:'block',width:'100%',height:'100%'}}>
+                              {layout.cells.map((cell, ci) => {
+                                const fill = isActive ? CA[ci % CA.length] : CI[ci % CI.length];
+                                if (cell.clip) {
+                                  const pts = cell.clip.split(',').map(p=>p.trim().split(' ').join(',')).join(' ');
+                                  return <polygon key={ci} points={pts} fill={fill} stroke={STROKE} strokeWidth="2"/>;
                                 }
-                              />
-                            ))}
+                                return <rect key={ci} x={cell.x+0.75} y={cell.y+0.75} width={cell.w-1.5} height={cell.h-1.5} fill={fill} stroke={STROKE} strokeWidth="1.5"/>;
+                              })}
+                            </svg>
                           </div>
                           <div className="bg-slate-800 px-1 py-0.5">
                             <p className="text-[8px] text-slate-400 truncate text-center">{layout.name}</p>
