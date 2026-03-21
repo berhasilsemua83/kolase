@@ -438,6 +438,111 @@ const CellEditor: React.FC<CellEditorProps> = ({
 };
 
 // =============================================
+// TEXT FORM — sub-component terpisah agar state-nya
+// tidak terpengaruh re-render CollageEditor
+// =============================================
+interface TextFormProps {
+  onAdd: (layer: TextLayer) => void;
+}
+const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
+  const [text, setText]     = useState('');
+  const [font, setFont]     = useState('sans');
+  const [color, setColor]   = useState('#ffffff');
+  const [size, setSize]     = useState(40);
+  const [bold, setBold]     = useState(false);
+  const [italic, setItalic] = useState(false);
+  const [shadow, setShadow] = useState(true);
+
+  const handleAdd = () => {
+    const t = text.trim();
+    if (!t) return;
+    onAdd({
+      kind: 'text', id: `t_${Date.now()}`,
+      text: t, font, color, size, bold, italic, shadow,
+      x: 50, y: 50, rotation: 0,
+    });
+    setText('');
+  };
+
+  return (
+    <div className="p-3 space-y-3">
+      <div>
+        <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
+        <input
+          type="text"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }}}
+          placeholder="Ketik teks..."
+          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+        />
+      </div>
+
+      <div>
+        <label className="block text-[10px] text-slate-400 mb-1">Font</label>
+        <div className="grid grid-cols-3 gap-1">
+          {FONTS.map(f => (
+            <button key={f.id} type="button" onClick={() => setFont(f.id)}
+              className={`py-1.5 px-2 rounded-lg text-xs border truncate transition-colors ${font === f.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:border-indigo-500/50'}`}
+              style={{ fontFamily: f.css }}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-[10px] text-slate-400 mb-1">Warna</label>
+        <div className="flex gap-1.5 flex-wrap">
+          {TEXT_COLORS.map(c => (
+            <button key={c} type="button" onClick={() => setColor(c)}
+              className={`w-6 h-6 rounded-full border-2 transition-all ${color === c ? 'border-white scale-125' : 'border-slate-600 hover:scale-110'}`}
+              style={{ background: c }}/>
+          ))}
+          <label className="w-6 h-6 rounded-full border-2 border-slate-500 overflow-hidden cursor-pointer" style={{ background: color }}>
+            <input type="color" value={color} onChange={e => setColor(e.target.value)} className="opacity-0 w-0 h-0"/>
+          </label>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <label className="block text-[10px] text-slate-400 mb-1">Ukuran: {size}px</label>
+          <input type="range" min={12} max={120} value={size} onChange={e => setSize(Number(e.target.value))}
+            className="w-full h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
+        </div>
+        <div className="flex gap-1 pt-4">
+          <button type="button" onClick={() => setBold(v => !v)}
+            className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${bold ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>B</button>
+          <button type="button" onClick={() => setItalic(v => !v)}
+            className={`w-8 h-8 rounded-lg text-sm italic transition-colors ${italic ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>I</button>
+          <button type="button" onClick={() => setShadow(v => !v)}
+            className={`w-8 h-8 rounded-lg text-sm transition-colors ${shadow ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>S</button>
+        </div>
+      </div>
+
+      {/* Preview */}
+      <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[44px] flex items-center justify-center overflow-hidden">
+        <span style={{
+          fontFamily: FONTS.find(f => f.id === font)?.css,
+          color, fontSize: `${Math.min(size, 36)}px`,
+          fontWeight: bold ? 'bold' : 'normal',
+          fontStyle: italic ? 'italic' : 'normal',
+          textShadow: shadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
+        }}>
+          {text || 'Preview Teks'}
+        </span>
+      </div>
+
+      <button type="button" onClick={handleAdd} disabled={!text.trim()}
+        className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors">
+        + Tambah ke Kolase
+      </button>
+    </div>
+  );
+};
+
+// =============================================
 // MAIN COMPONENT
 // =============================================
 
@@ -1013,86 +1118,11 @@ const CollageEditor: React.FC = () => {
                 ))}
               </div>
 
-              {/* Tab: Teks */}
+              {/* Tab: Teks — TextForm sub-component, state terisolasi */}
               {activeTab === 'teks' && (
-                <div className="p-3 space-y-3">
-                  {/* Input teks */}
-                  <div>
-                    <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
-                    <input
-                      ref={inputRef}
-                      type="text"
-                      defaultValue=""
-                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTextLayer(); }}}
-                      placeholder="Ketik teks lalu Enter atau klik Tambah..."
-                      autoComplete="off"
-                      autoCorrect="off"
-                      autoCapitalize="off"
-                      spellCheck={false}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-                  {/* Font */}
-                  <div>
-                    <label className="block text-[10px] text-slate-400 mb-1">Font</label>
-                    <div className="grid grid-cols-3 gap-1">
-                      {FONTS.map(f => (
-                        <button key={f.id} type="button" onClick={() => { setNewFont(f.id); textFormRef.current.font = f.id; }}
-                          className={`py-1.5 px-2 rounded-lg text-xs border transition-colors truncate ${newFont === f.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:border-indigo-500/50'}`}
-                          style={{ fontFamily: f.css }}>
-                          {f.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {/* Warna */}
-                  <div>
-                    <label className="block text-[10px] text-slate-400 mb-1">Warna</label>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {TEXT_COLORS.map(c => (
-                        <button key={c} type="button" onClick={() => { setNewColor(c); textFormRef.current.color = c; }}
-                          className={`w-6 h-6 rounded-full border-2 transition-all ${newColor === c ? 'border-white scale-125' : 'border-slate-600 hover:scale-110'}`}
-                          style={{ background: c }}/>
-                      ))}
-                      <label className="w-6 h-6 rounded-full border-2 border-slate-500 overflow-hidden cursor-pointer hover:scale-110 transition-all" style={{ background: newColor }}>
-                        <input type="color" value={newColor} onChange={e => { setNewColor(e.target.value); textFormRef.current.color = e.target.value; }} className="opacity-0 w-0 h-0"/>
-                      </label>
-                    </div>
-                  </div>
-                  {/* Ukuran + style */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1">
-                      <label className="block text-[10px] text-slate-400 mb-1">Ukuran: {newSize}px</label>
-                      <input type="range" min={14} max={120} value={newSize} onChange={e => { const v = Number(e.target.value); setNewSize(v); textFormRef.current.size = v; }}
-                        className="w-full h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
-                    </div>
-                    <div className="flex gap-1 mt-3">
-                      <button type="button" onClick={() => { const v = !textFormRef.current.bold; setNewBold(v); textFormRef.current.bold = v; }}
-                        className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${newBold ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>B</button>
-                      <button type="button" onClick={() => { const v = !textFormRef.current.italic; setNewItalic(v); textFormRef.current.italic = v; }}
-                        className={`w-8 h-8 rounded-lg text-sm italic transition-colors ${newItalic ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>I</button>
-                      <button type="button" onClick={() => { const v = !textFormRef.current.shadow; setNewShadow(v); textFormRef.current.shadow = v; }}
-                        title="Shadow"
-                        className={`w-8 h-8 rounded-lg text-sm transition-colors ${newShadow ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>S</button>
-                    </div>
-                  </div>
-                  {/* Preview teks */}
-                  <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[40px] flex items-center justify-center overflow-hidden">
-                    <span style={{
-                      fontFamily: FONTS.find(f => f.id === newFont)?.css,
-                      color: newColor,
-                      fontSize: `${Math.min(newSize, 36)}px`,
-                      fontWeight: newBold ? 'bold' : 'normal',
-                      fontStyle: newItalic ? 'italic' : 'normal',
-                      textShadow: newShadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
-                    }}>Preview Teks</span>
-                  </div>
-                  <button type="button" onClick={addTextLayer} disabled={!newText.trim()}
-                    className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-semibold transition-colors">
-                    + Tambah ke Kolase
-                  </button>
-                </div>
+                <TextForm onAdd={layer => { setLayers(prev => [...prev, layer]); setSelectedLayer(layer.id); }} />
               )}
+
 
               {/* Tab: Stiker */}
               {activeTab === 'stiker' && (
@@ -1397,11 +1427,10 @@ const CollageEditor: React.FC = () => {
                         outline: isSel ? '2px dashed #818cf8' : 'none',
                         outlineOffset: '2px',
                       }}
-                      onMouseDown={e => handleLayerMouseDown(e, layer.id, layer.x, layer.y)}
-                      onTouchStart={e => handleLayerTouchStart(e, layer.id, layer.x, layer.y)}
+                      onMouseDown={e => { e.stopPropagation(); handleLayerMouseDown(e, layer.id, layer.x, layer.y); }}
+                      onTouchStart={e => { e.stopPropagation(); handleLayerTouchStart(e, layer.id, layer.x, layer.y); }}
                       onTouchMove={handleLayerTouchMove}
                       onTouchEnd={() => { layerDrag.current = null; }}
-                      onClick={e => { e.stopPropagation(); setSelectedLayer(isSel ? null : layer.id); }}
                     >
                       {isText ? (
                         <span style={{
