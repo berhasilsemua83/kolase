@@ -419,19 +419,11 @@ interface TextFormProps {
 }
 
 const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
-  // ── ZERO-RERENDER TYPING ────────────────────────────────────────────────────
-  // Masalah inti: setiap setState saat mengetik memicu React re-render yang
-  // di mobile bisa menutup keyboard virtual / reset fokus input.
-  //
-  // Solusi: TIDAK ADA state update sama sekali saat mengetik.
-  //   • Input: uncontrolled (tanpa prop `value`), nilai dibaca via inputRef
-  //   • Preview span: diupdate langsung via previewRef.current.textContent
-  //     → murni DOM mutation, React tidak tahu, tidak ada re-render
-  //   • Style preview (font/color/size/bold): state boleh berubah karena
-  //     itu hanya terjadi saat klik tombol, bukan saat mengetik
-  // ───────────────────────────────────────────────────────────────────────────
-  const inputRef      = useRef<HTMLInputElement>(null);
-  const previewRef    = useRef<HTMLSpanElement>(null);
+  // Uncontrolled textarea — tidak ada setState saat mengetik sama sekali.
+  // Semua nilai dibaca via ref hanya saat tombol Tambah ditekan.
+  // Tidak ada event handler pada container yang bisa memblokir fokus.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef  = useRef<HTMLSpanElement>(null);
 
   const [font,   setFont]   = useState('sans');
   const [color,  setColor]  = useState('#ffffff');
@@ -440,46 +432,36 @@ const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
   const [italic, setItalic] = useState(false);
   const [shadow, setShadow] = useState(true);
 
-  // Update teks preview langsung ke DOM — tidak lewat React state
   const syncPreview = (val: string) => {
-    if (previewRef.current) {
-      previewRef.current.textContent = val || 'Preview Teks';
-    }
+    if (previewRef.current)
+      previewRef.current.textContent = val.trim() || 'Preview Teks';
   };
 
   const handleAdd = () => {
-    const t = (inputRef.current?.value ?? '').trim();
+    const t = (textareaRef.current?.value ?? '').trim();
     if (!t) return;
-    onAdd({
-      kind: 'text', id: `t_${Date.now()}`,
-      text: t, font, color, size, bold, italic, shadow,
-      x: 50, y: 50, rotation: 0,
-    });
-    if (inputRef.current) inputRef.current.value = '';
+    onAdd({ kind:'text', id:`t_${Date.now()}`, text:t, font, color, size, bold, italic, shadow, x:50, y:50, rotation:0 });
+    if (textareaRef.current) textareaRef.current.value = '';
     syncPreview('');
   };
 
   return (
-    <div
-      className="p-3 space-y-3"
-      onMouseDown={e => e.stopPropagation()}
-      onTouchStart={e => e.stopPropagation()}
-      onClick={e => e.stopPropagation()}
-    >
+    <div className="p-3 space-y-3">
       <div>
         <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
-        <input
-          ref={inputRef}
-          type="text"
-          // onInput bukan onChange — lebih rendah level, lebih cepat
-          // Tidak ada setState → tidak ada re-render → keyboard tidak hilang
-          onInput={e => syncPreview((e.target as HTMLInputElement).value)}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAdd(); } }}
-          placeholder="Ketik teks..."
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          spellCheck={false}
+        {/*
+          - Tidak ada prop value / defaultValue → uncontrolled
+          - Tidak ada stopPropagation / preventDefault di container
+          - touch-action: manipulation → mencegah double-tap zoom TANPA
+            memblokir fokus / keyboard virtual di mobile
+          - textarea lebih reliabel dari input di mobile browser
+        */}
+        <textarea
+          ref={textareaRef}
+          rows={2}
+          onInput={e => syncPreview((e.target as HTMLTextAreaElement).value)}
+          placeholder="Ketik teks di sini..."
+          style={{ touchAction: 'manipulation', resize: 'none' }}
           className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
         />
       </div>
@@ -489,7 +471,7 @@ const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
         <div className="grid grid-cols-3 gap-1">
           {FONTS.map(f => (
             <button key={f.id} type="button" onClick={() => setFont(f.id)}
-              className={`py-1.5 px-2 rounded-lg text-xs border truncate transition-colors ${font === f.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:border-indigo-500/50'}`}
+              className={`py-1.5 px-2 rounded-lg text-xs border truncate transition-colors ${font===f.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:border-indigo-500/50'}`}
               style={{ fontFamily: f.css }}>
               {f.label}
             </button>
@@ -502,7 +484,7 @@ const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
         <div className="flex gap-1.5 flex-wrap">
           {TEXT_COLORS.map(c => (
             <button key={c} type="button" onClick={() => setColor(c)}
-              className={`w-6 h-6 rounded-full border-2 transition-all ${color === c ? 'border-white scale-125' : 'border-slate-600 hover:scale-110'}`}
+              className={`w-6 h-6 rounded-full border-2 transition-all ${color===c ? 'border-white scale-125' : 'border-slate-600 hover:scale-110'}`}
               style={{ background: c }}/>
           ))}
           <label className="w-6 h-6 rounded-full border-2 border-slate-500 overflow-hidden cursor-pointer" style={{ background: color }}>
@@ -527,24 +509,17 @@ const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
         </div>
       </div>
 
-      {/* Preview — span diupdate langsung via ref, bukan via React state */}
-      <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[44px] flex items-center justify-center overflow-hidden">
-        <span
-          ref={previewRef}
-          style={{
-            fontFamily: FONTS.find(f => f.id === font)?.css,
-            color,
-            fontSize: `${Math.min(size, 36)}px`,
-            fontWeight: bold ? 'bold' : 'normal',
-            fontStyle: italic ? 'italic' : 'normal',
-            textShadow: shadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
-          }}
-        >
-          Preview Teks
-        </span>
+      <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[44px] flex items-center justify-center">
+        <span ref={previewRef} style={{
+          fontFamily: FONTS.find(f => f.id===font)?.css,
+          color, fontSize:`${Math.min(size,36)}px`,
+          fontWeight: bold ? 'bold' : 'normal',
+          fontStyle: italic ? 'italic' : 'normal',
+          textShadow: shadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
+          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+        }}>Preview Teks</span>
       </div>
 
-      {/* Tombol: tidak disabled (cek dilakukan di handleAdd) */}
       <button type="button" onClick={handleAdd}
         className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors">
         + Tambah ke Kolase
@@ -1107,7 +1082,7 @@ const CollageEditor: React.FC = () => {
 
           {/* ── TAB: TEKS & STIKER ── */}
           {selectedLayout && (
-            <div className="rounded-xl border border-slate-700 bg-slate-800/30 overflow-hidden">
+            <div className="rounded-xl border border-slate-700 bg-slate-800/30">
               <div className="flex border-b border-slate-700">
                 {(['foto','teks','stiker'] as const).map(tab => (
                   <button key={tab} type="button" onClick={() => setActiveTab(tab)}
@@ -1117,8 +1092,9 @@ const CollageEditor: React.FC = () => {
                 ))}
               </div>
 
-              {/* TextForm SELALU di-render (tidak conditional) agar tidak unmount/remount.
-                  Visibility dikontrol via CSS display agar ref input tetap valid. */}
+              {/* TextForm SELALU di-mount (hanya disembunyikan via CSS).
+                  Diletakkan di LUAR overflow-hidden agar keyboard mobile tidak terblokir.
+                  display:none/block bukan unmount → ref textarea tetap valid. */}
               <div style={{ display: activeTab === 'teks' ? 'block' : 'none' }}>
                 <TextForm onAdd={handleAddTextLayer} />
               </div>
