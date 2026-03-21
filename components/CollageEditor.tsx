@@ -1318,13 +1318,21 @@ const CollageEditor: React.FC = () => {
                 </div>
               </div>
 
-              {/* Wrapper: relative tanpa overflow-hidden agar layer tidak terpotong */}
-              <div ref={previewRef} className="w-full rounded-xl shadow-2xl ring-1 ring-slate-700 relative"
-                style={{ aspectRatio: `${arW} / ${arH}` }}
-                onClick={() => setSelectedLayer(null)}>
-
-                {/* Foto canvas — overflow-hidden untuk clip foto */}
-                <div className="absolute inset-0 rounded-xl overflow-hidden" style={{ background: bgColor }}>
+              {/* Preview — pakai position relative + aspect-ratio. 
+                  TIDAK overflow-hidden di sini karena akan memotong layer teks.
+                  Tiap foto sudah di-clip di dalam CellEditor masing-masing. */}
+              {/* Wrapper: padding-bottom trick → tinggi PASTI ada meski semua children absolute */}
+              <div
+                className="w-full rounded-xl shadow-2xl ring-1 ring-slate-700"
+                style={{ position: 'relative', paddingBottom: `${(arH / arW) * 100}%` }}
+              >
+                {/* Foto layer — overflow hidden untuk clip foto ke batas canvas */}
+                <div
+                  ref={previewRef}
+                  className="absolute inset-0 rounded-xl overflow-hidden"
+                  style={{ background: bgColor }}
+                  onClick={() => setSelectedLayer(null)}
+                >
                   {selectedLayout.cells.map((cell, i) => (
                     <div key={`${selectedLayout.id}-${i}`} style={getCellStyle(cell)}>
                       <CellEditor
@@ -1338,68 +1346,93 @@ const CollageEditor: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Layer overlay — absolute inset-0, TIDAK overflow-hidden */}
-                <div className="absolute inset-0" style={{ pointerEvents: 'none' }}>
-                  {layers.map(layer => {
-                    const isSel = selectedLayer === layer.id;
-                    const fontCss = layer.kind === 'text'
-                      ? FONTS.find(f => f.id === (layer as TextLayer).font)?.css || 'Arial'
-                      : 'serif';
-                    return (
-                      <div key={layer.id}
-                        style={{
-                          position: 'absolute',
-                          left: `${layer.x}%`,
-                          top: `${layer.y}%`,
-                          transform: `translate(-50%, -50%) rotate(${layer.rotation}deg)`,
-                          cursor: 'grab',
-                          userSelect: 'none',
-                          pointerEvents: 'auto',
-                          padding: '4px',
-                          borderRadius: '4px',
-                          outline: isSel ? '2px dashed rgba(99,102,241,0.9)' : '2px dashed transparent',
-                          outlineOffset: '2px',
-                        }}
-                        onMouseDown={e => handleLayerMouseDown(e, layer.id, layer.x, layer.y)}
-                        onTouchStart={e => handleLayerTouchStart(e, layer.id, layer.x, layer.y)}
-                        onTouchMove={handleLayerTouchMove}
-                        onTouchEnd={() => { layerDrag.current = null; }}
-                        onClick={e => { e.stopPropagation(); setSelectedLayer(isSel ? null : layer.id); }}
-                      >
-                        {layer.kind === 'text' ? (
-                          <span style={{
-                            fontFamily: fontCss,
-                            fontSize: `${layer.size}px`,
-                            fontWeight: (layer as TextLayer).bold ? 'bold' : 'normal',
-                            fontStyle: (layer as TextLayer).italic ? 'italic' : 'normal',
-                            color: (layer as TextLayer).color,
-                            textShadow: (layer as TextLayer).shadow ? '2px 2px 4px rgba(0,0,0,0.9)' : 'none',
-                            whiteSpace: 'nowrap',
-                            display: 'block',
-                            lineHeight: 1.2,
-                          }}>{(layer as TextLayer).text}</span>
-                        ) : (
-                          <span style={{ fontSize: `${layer.size}px`, lineHeight: 1, display: 'block' }}>
-                            {(layer as StickerLayer).symbol}
-                          </span>
-                        )}
-                        {isSel && (
-                          <button type="button"
-                            onClick={e => { e.stopPropagation(); removeLayer(layer.id); }}
-                            style={{
-                              position: 'absolute', top: -10, right: -10,
-                              width: 22, height: 22,
-                              background: '#ef4444', borderRadius: '50%',
-                              border: '2px solid white', color: 'white',
-                              fontSize: 11, cursor: 'pointer',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}>✕</button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+                {/* Layer teks & stiker — absolute inset-0 TANPA overflow hidden → tidak terpotong */}
+                <div
+                  className="absolute inset-0 rounded-xl"
+                  style={{ pointerEvents: 'none' }}
+                  onClick={() => setSelectedLayer(null)}
+                >
+                {/* layers.map di dalam sini */}
+                {layers.map(layer => {
+                  const isSel = selectedLayer === layer.id;
+                  const isText = layer.kind === 'text';
+                  const tl = layer as TextLayer;
+                  const sl = layer as StickerLayer;
+                  const fontCss = isText
+                    ? (FONTS.find(f => f.id === tl.font)?.css || 'Arial, sans-serif')
+                    : 'serif';
+                  return (
+                    <div
+                      key={layer.id}
+                      style={{
+                        position: 'absolute',
+                        left: `${layer.x}%`,
+                        top: `${layer.y}%`,
+                        transform: `translate(-50%, -50%) rotate(${layer.rotation}deg)`,
+                        cursor: 'grab',
+                        userSelect: 'none',
+                        zIndex: 10,
+                        padding: '3px 6px',
+                        borderRadius: '4px',
+                        boxSizing: 'border-box',
+                        outline: isSel ? '2px dashed #818cf8' : 'none',
+                        outlineOffset: '2px',
+                      }}
+                      onMouseDown={e => handleLayerMouseDown(e, layer.id, layer.x, layer.y)}
+                      onTouchStart={e => handleLayerTouchStart(e, layer.id, layer.x, layer.y)}
+                      onTouchMove={handleLayerTouchMove}
+                      onTouchEnd={() => { layerDrag.current = null; }}
+                      onClick={e => { e.stopPropagation(); setSelectedLayer(isSel ? null : layer.id); }}
+                    >
+                      {isText ? (
+                        <span style={{
+                          display: 'block',
+                          fontFamily: fontCss,
+                          fontSize: `${layer.size}px`,
+                          fontWeight: tl.bold ? 'bold' : 'normal',
+                          fontStyle: tl.italic ? 'italic' : 'normal',
+                          color: tl.color,
+                          textShadow: tl.shadow ? '2px 2px 6px rgba(0,0,0,1), -1px -1px 3px rgba(0,0,0,0.8)' : 'none',
+                          whiteSpace: 'nowrap',
+                          lineHeight: 1.2,
+                        }}>
+                          {tl.text}
+                        </span>
+                      ) : (
+                        <span style={{
+                          display: 'block',
+                          fontSize: `${layer.size}px`,
+                          lineHeight: 1,
+                        }}>
+                          {sl.symbol}
+                        </span>
+                      )}
+                      {isSel && (
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); removeLayer(layer.id); }}
+                          style={{
+                            position: 'absolute',
+                            top: -10, right: -10,
+                            width: 20, height: 20,
+                            background: '#ef4444',
+                            borderRadius: '50%',
+                            border: '2px solid white',
+                            color: 'white',
+                            fontSize: 10,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 20,
+                          }}
+                        >✕</button>
+                      )}
+                    </div>
+                  );
+                })}
+                </div>{/* end layer overlay */}
+              </div>{/* end padding-bottom wrapper */}
 
               {/* Progress dots */}
               <div className="flex items-center gap-2 mt-2">
