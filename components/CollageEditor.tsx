@@ -533,7 +533,7 @@ const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
       </button>
     </div>
   );
-});
+};
 
 // =============================================
 // MAIN COMPONENT
