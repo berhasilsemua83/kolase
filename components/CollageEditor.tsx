@@ -1318,69 +1318,87 @@ const CollageEditor: React.FC = () => {
                 </div>
               </div>
 
-              <div ref={previewRef} className="w-full rounded-xl overflow-hidden shadow-2xl ring-1 ring-slate-700 relative"
-                style={{ aspectRatio: `${arW} / ${arH}`, background: bgColor }}
+              {/* Wrapper: relative tanpa overflow-hidden agar layer tidak terpotong */}
+              <div ref={previewRef} className="w-full rounded-xl shadow-2xl ring-1 ring-slate-700 relative"
+                style={{ aspectRatio: `${arW} / ${arH}` }}
                 onClick={() => setSelectedLayer(null)}>
-                {selectedLayout.cells.map((cell, i) => (
-                  <div key={`${selectedLayout.id}-${i}`} style={getCellStyle(cell)}>
-                    <CellEditor
-                      cs={cells[i] ?? DEFAULT_CELL()} idx={i}
-                      isDragOver={dragOverCell === i} isSelected={selectedCell === i}
-                      onSelect={setSelectedCell} onUpdate={updateCell}
-                      onUpload={(i, f) => uploadToStaged(i, f)} onRemove={handleRemoveCell}
-                      onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
-                    />
-                  </div>
-                ))}
 
-                {/* ── LAYER OVERLAY ── */}
-                {layers.map(layer => {
-                  const isSel = selectedLayer === layer.id;
-                  const fontCss = layer.kind === 'text' ? FONTS.find(f => f.id === layer.font)?.css : 'serif';
-                  return (
-                    <div key={layer.id}
-                      style={{
-                        position: 'absolute',
-                        left: `${layer.x}%`, top: `${layer.y}%`,
-                        transform: `translate(-50%, -50%) rotate(${layer.rotation}deg)`,
-                        cursor: 'grab',
-                        userSelect: 'none',
-                        zIndex: 20,
-                        padding: '4px',
-                        borderRadius: '4px',
-                        outline: isSel ? '2px dashed rgba(99,102,241,0.8)' : '2px dashed transparent',
-                      }}
-                      onMouseDown={e => handleLayerMouseDown(e, layer.id, layer.x, layer.y)}
-                      onTouchStart={e => handleLayerTouchStart(e, layer.id, layer.x, layer.y)}
-                      onTouchMove={handleLayerTouchMove}
-                      onTouchEnd={() => { layerDrag.current = null; }}
-                      onClick={e => { e.stopPropagation(); setSelectedLayer(isSel ? null : layer.id); }}
-                    >
-                      {layer.kind === 'text' ? (
-                        <span style={{
-                          fontFamily: fontCss,
-                          fontSize: `${layer.size}px`,
-                          fontWeight: layer.bold ? 'bold' : 'normal',
-                          fontStyle: layer.italic ? 'italic' : 'normal',
-                          color: layer.color,
-                          textShadow: layer.shadow ? '1px 1px 4px rgba(0,0,0,0.8)' : 'none',
-                          whiteSpace: 'nowrap',
-                          display: 'block',
-                        }}>{layer.text}</span>
-                      ) : (
-                        <span style={{ fontSize: `${layer.size}px`, lineHeight: 1, display: 'block' }}>{layer.symbol}</span>
-                      )}
-                      {/* Delete button saat dipilih */}
-                      {isSel && (
-                        <button type="button"
-                          onClick={e => { e.stopPropagation(); removeLayer(layer.id); }}
-                          style={{ position:'absolute', top:-10, right:-10, width:20, height:20, background:'#ef4444', borderRadius:'50%', border:'none', color:'white', fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', zIndex:30 }}>
-                          ✕
-                        </button>
-                      )}
+                {/* Foto canvas — overflow-hidden untuk clip foto */}
+                <div className="absolute inset-0 rounded-xl overflow-hidden" style={{ background: bgColor }}>
+                  {selectedLayout.cells.map((cell, i) => (
+                    <div key={`${selectedLayout.id}-${i}`} style={getCellStyle(cell)}>
+                      <CellEditor
+                        cs={cells[i] ?? DEFAULT_CELL()} idx={i}
+                        isDragOver={dragOverCell === i} isSelected={selectedCell === i}
+                        onSelect={setSelectedCell} onUpdate={updateCell}
+                        onUpload={(i, f) => uploadToStaged(i, f)} onRemove={handleRemoveCell}
+                        onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+                      />
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
+
+                {/* Layer overlay — absolute inset-0, TIDAK overflow-hidden */}
+                <div className="absolute inset-0" style={{ pointerEvents: 'none' }}>
+                  {layers.map(layer => {
+                    const isSel = selectedLayer === layer.id;
+                    const fontCss = layer.kind === 'text'
+                      ? FONTS.find(f => f.id === (layer as TextLayer).font)?.css || 'Arial'
+                      : 'serif';
+                    return (
+                      <div key={layer.id}
+                        style={{
+                          position: 'absolute',
+                          left: `${layer.x}%`,
+                          top: `${layer.y}%`,
+                          transform: `translate(-50%, -50%) rotate(${layer.rotation}deg)`,
+                          cursor: 'grab',
+                          userSelect: 'none',
+                          pointerEvents: 'auto',
+                          padding: '4px',
+                          borderRadius: '4px',
+                          outline: isSel ? '2px dashed rgba(99,102,241,0.9)' : '2px dashed transparent',
+                          outlineOffset: '2px',
+                        }}
+                        onMouseDown={e => handleLayerMouseDown(e, layer.id, layer.x, layer.y)}
+                        onTouchStart={e => handleLayerTouchStart(e, layer.id, layer.x, layer.y)}
+                        onTouchMove={handleLayerTouchMove}
+                        onTouchEnd={() => { layerDrag.current = null; }}
+                        onClick={e => { e.stopPropagation(); setSelectedLayer(isSel ? null : layer.id); }}
+                      >
+                        {layer.kind === 'text' ? (
+                          <span style={{
+                            fontFamily: fontCss,
+                            fontSize: `${layer.size}px`,
+                            fontWeight: (layer as TextLayer).bold ? 'bold' : 'normal',
+                            fontStyle: (layer as TextLayer).italic ? 'italic' : 'normal',
+                            color: (layer as TextLayer).color,
+                            textShadow: (layer as TextLayer).shadow ? '2px 2px 4px rgba(0,0,0,0.9)' : 'none',
+                            whiteSpace: 'nowrap',
+                            display: 'block',
+                            lineHeight: 1.2,
+                          }}>{(layer as TextLayer).text}</span>
+                        ) : (
+                          <span style={{ fontSize: `${layer.size}px`, lineHeight: 1, display: 'block' }}>
+                            {(layer as StickerLayer).symbol}
+                          </span>
+                        )}
+                        {isSel && (
+                          <button type="button"
+                            onClick={e => { e.stopPropagation(); removeLayer(layer.id); }}
+                            style={{
+                              position: 'absolute', top: -10, right: -10,
+                              width: 22, height: 22,
+                              background: '#ef4444', borderRadius: '50%',
+                              border: '2px solid white', color: 'white',
+                              fontSize: 11, cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>✕</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Progress dots */}
