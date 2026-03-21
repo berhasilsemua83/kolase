@@ -418,52 +418,55 @@ interface TextFormProps {
   onAdd: (layer: TextLayer) => void;
 }
 
-const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
-  const [text, setText]     = useState('');
-  const [font, setFont]     = useState('sans');
-  const [color, setColor]   = useState('#ffffff');
-  const [size, setSize]     = useState(40);
-  const [bold, setBold]     = useState(false);
-  const [italic, setItalic] = useState(false);
-  const [shadow, setShadow] = useState(true);
+const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
+  // ── UNCONTROLLED INPUT ──────────────────────────────────────────────────────
+  // Solusi nyata bug "tidak bisa ketik":
+  // Controlled input (value={state}) memaksa React menimpa nilai DOM setiap
+  // re-render, yang menyebabkan cursor reset / karakter hilang di beberapa
+  // environment. Uncontrolled input (ref only, tanpa value prop) menyerahkan
+  // kendali sepenuhnya ke browser — React tidak pernah menyentuh DOM input.
+  // ───────────────────────────────────────────────────────────────────────────
+  const inputRef              = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState('');   // hanya untuk tampilan live preview
+  const [font, setFont]       = useState('sans');
+  const [color, setColor]     = useState('#ffffff');
+  const [size, setSize]       = useState(40);
+  const [bold, setBold]       = useState(false);
+  const [italic, setItalic]   = useState(false);
+  const [shadow, setShadow]   = useState(true);
 
   const handleAdd = () => {
-    const t = text.trim();
+    const t = (inputRef.current?.value ?? '').trim();
     if (!t) return;
     onAdd({
       kind: 'text', id: `t_${Date.now()}`,
       text: t, font, color, size, bold, italic, shadow,
       x: 50, y: 50, rotation: 0,
     });
-    setText('');
+    // Reset input DOM langsung + hapus preview state
+    if (inputRef.current) inputRef.current.value = '';
+    setPreview('');
   };
 
   return (
-    <div className="p-3 space-y-3">
+    // stopPropagation di container mencegah event mouse/touch naik ke parent
+    // (preview area punya onClick={() => setSelectedLayer(null)})
+    <div
+      className="p-3 space-y-3"
+      onMouseDown={e => e.stopPropagation()}
+      onTouchStart={e => e.stopPropagation()}
+      onClick={e => e.stopPropagation()}
+    >
       <div>
         <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
-        {/*
-          FIX TYPING BUG:
-          - stopPropagation pada onMouseDown, onTouchStart, onChange, onKeyDown
-            mencegah event naik ke parent yang bisa memicu re-render atau
-            mengambil alih fokus input.
-          - autoComplete/autoCorrect/spellCheck dimatikan supaya browser tidak
-            memunculkan UI yang mengganggu fokus di mobile.
-        */}
         <input
+          ref={inputRef}
           type="text"
-          value={text}
-          onChange={e => { e.stopPropagation(); setText(e.target.value); }}
-          onKeyDown={e => {
-            e.stopPropagation();
-            if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
-          }}
-          onMouseDown={e => e.stopPropagation()}
-          onTouchStart={e => e.stopPropagation()}
-          onClick={e => e.stopPropagation()}
+          // Tidak ada prop `value` → uncontrolled, browser yang pegang nilai
+          onChange={e => setPreview(e.target.value)}   // hanya update preview display
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAdd(); } }}
           placeholder="Ketik teks..."
           autoComplete="off"
-          autoCorrect="off"
           spellCheck={false}
           className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
         />
@@ -520,11 +523,11 @@ const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
           fontStyle: italic ? 'italic' : 'normal',
           textShadow: shadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
         }}>
-          {text || 'Preview Teks'}
+          {preview || 'Preview Teks'}
         </span>
       </div>
 
-      <button type="button" onClick={handleAdd} disabled={!text.trim()}
+      <button type="button" onClick={handleAdd} disabled={!preview.trim()}
         className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors">
         + Tambah ke Kolase
       </button>
