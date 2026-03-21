@@ -418,7 +418,7 @@ interface TextFormProps {
   onAdd: (layer: TextLayer) => void;
 }
 
-const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
+const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
   // ── ZERO-RERENDER TYPING ────────────────────────────────────────────────────
   // Masalah inti: setiap setState saat mengetik memicu React re-render yang
   // di mobile bisa menutup keyboard virtual / reset fokus input.
@@ -551,7 +551,7 @@ const TextForm: React.FC<TextFormProps> = ({ onAdd }) => {
       </button>
     </div>
   );
-};
+});
 
 // =============================================
 // MAIN COMPONENT
@@ -1117,11 +1117,11 @@ const CollageEditor: React.FC = () => {
                 ))}
               </div>
 
-              {/* FIX TYPING: TextForm menerima handleAddTextLayer yang stabil (memoized),
-                  bukan inline arrow function yang baru tiap render */}
-              {activeTab === 'teks' && (
+              {/* TextForm SELALU di-render (tidak conditional) agar tidak unmount/remount.
+                  Visibility dikontrol via CSS display agar ref input tetap valid. */}
+              <div style={{ display: activeTab === 'teks' ? 'block' : 'none' }}>
                 <TextForm onAdd={handleAddTextLayer} />
-              )}
+              </div>
 
               {activeTab === 'stiker' && (
                 <div className="p-3 space-y-3">
