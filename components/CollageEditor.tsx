@@ -408,20 +408,16 @@ const CellEditor: React.FC<CellEditorProps> = ({
 };
 
 // =============================================
-// TEXT FORM
-// =============================================
-// FIX: Dibungkus React.memo agar tidak re-mount saat parent re-render.
-// FIX: Semua event input pakai stopPropagation() agar tidak ada parent yang
-//      mencegat event keyboard/pointer, yang dulu menyebabkan tidak bisa ketik.
+// TEXT FORM (Controlled Component Fix)
 // =============================================
 interface TextFormProps {
   onAdd: (layer: TextLayer) => void;
 }
 
 const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const previewRef  = useRef<HTMLSpanElement>(null);
-
+  // Gunakan state untuk teks agar sinkron sempurna dengan React
+  const [text, setText]     = useState('');
+  
   const [font,   setFont]   = useState('sans');
   const [color,  setColor]  = useState('#ffffff');
   const [size,   setSize]   = useState(40);
@@ -429,20 +425,14 @@ const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
   const [italic, setItalic] = useState(false);
   const [shadow, setShadow] = useState(true);
 
-  const syncPreview = (val: string) => {
-    if (previewRef.current)
-      previewRef.current.textContent = val.trim() || 'Preview Teks';
-  };
-
   const handleAdd = () => {
-    const t = (textareaRef.current?.value ?? '').trim();
+    const t = text.trim();
     if (!t) return;
     onAdd({ kind:'text', id:`t_${Date.now()}`, text:t, font, color, size, bold, italic, shadow, x:50, y:50, rotation:0 });
-    if (textareaRef.current) textareaRef.current.value = '';
-    syncPreview('');
+    setText(''); // Kosongkan teks setelah ditambah
   };
 
-  // Helper untuk mencegah parent mengambil alih fokus/event (PENTING!)
+  // Mencegah event bocor ke parent
   const stopEvent = (e: React.SyntheticEvent) => e.stopPropagation();
 
   return (
@@ -450,19 +440,15 @@ const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
       <div>
         <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
         <textarea
-          ref={textareaRef}
-          rows={2}
-          onChange={e => syncPreview(e.target.value)} // Diganti ke onChange standar React
-          // Menerapkan stopPropagation di semua event interaksi agar fokus tidak hilang
+          value={text}
+          onChange={e => setText(e.target.value)}
           onKeyDown={stopEvent}
-          onKeyUp={stopEvent}
-          onKeyPress={stopEvent}
-          onMouseDown={stopEvent}
-          onTouchStart={stopEvent}
           onPointerDown={stopEvent}
+          rows={2}
           placeholder="Ketik teks di sini..."
-          style={{ touchAction: 'manipulation', resize: 'none' }}
-          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+          // Tambahkan userSelect auto untuk mem-bypass class select-none dari parent jika ada
+          style={{ touchAction: 'manipulation', resize: 'none', userSelect: 'auto', pointerEvents: 'auto' }}
+          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
         />
       </div>
 
@@ -509,15 +495,18 @@ const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
         </div>
       </div>
 
-      <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[44px] flex items-center justify-center">
-        <span ref={previewRef} style={{
+      <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[44px] flex items-center justify-center overflow-hidden">
+        {/* Menggunakan state 'text' secara langsung untuk preview */}
+        <span style={{
           fontFamily: FONTS.find(f => f.id===font)?.css,
           color, fontSize:`${Math.min(size,36)}px`,
           fontWeight: bold ? 'bold' : 'normal',
           fontStyle: italic ? 'italic' : 'normal',
           textShadow: shadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
           whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-        }}>Preview Teks</span>
+        }}>
+          {text.trim() || 'Preview Teks'}
+        </span>
       </div>
 
       <button type="button" onClick={handleAdd}
