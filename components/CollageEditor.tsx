@@ -479,6 +479,7 @@ const CollageEditor: React.FC = () => {
   // Ref untuk selalu baca nilai terkini tanpa stale closure
   const textFormRef = useRef({ text:'', font:'sans', color:'#ffffff', size:40, bold:false, italic:false, shadow:true });
   const previewRef = useRef<HTMLDivElement>(null);
+  const inputRef   = useRef<HTMLInputElement>(null);  // uncontrolled input
 
   // Jumlah foto yang sudah diisi di staging
   const filledCount = staged.filter(s => s !== null).length;
@@ -641,19 +642,20 @@ const CollageEditor: React.FC = () => {
 
   // ── Layer helpers ──
   const addTextLayer = useCallback(() => {
-    // Baca dari ref — selalu nilai terkini, tidak ada stale closure
-    const { text, font, color, size, bold, italic, shadow } = textFormRef.current;
-    if (!text.trim()) return;
+    // Baca langsung dari DOM input (uncontrolled) — 100% fresh, tidak ada stale closure
+    const text = inputRef.current?.value?.trim() ?? '';
+    if (!text) return;
+    const f = textFormRef.current;
     const layer: TextLayer = {
       kind: 'text', id: `t_${Date.now()}`,
-      text, font, color, size, bold, italic, shadow,
+      text, font: f.font, color: f.color, size: f.size, bold: f.bold, italic: f.italic, shadow: f.shadow,
       x: 50, y: 50, rotation: 0,
     };
     setLayers(prev => [...prev, layer]);
     setSelectedLayer(layer.id);
-    setNewText('');
-    textFormRef.current.text = '';
-  }, []); // tidak perlu dependency — baca dari ref selalu fresh
+    // Reset input DOM langsung
+    if (inputRef.current) inputRef.current.value = '';
+  }, []); // tidak bergantung state apapun
 
   const addStickerLayer = useCallback((symbol: string) => {
     const layer: StickerLayer = {
@@ -1018,12 +1020,15 @@ const CollageEditor: React.FC = () => {
                   <div>
                     <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
                     <input
+                      ref={inputRef}
                       type="text"
-                      value={newText}
-                      onChange={e => { setNewText(e.target.value); textFormRef.current.text = e.target.value; }}
+                      defaultValue=""
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTextLayer(); }}}
-                      placeholder="Ketik teks..."
+                      placeholder="Ketik teks lalu Enter atau klik Tambah..."
                       autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
                       className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
                     />
                   </div>
@@ -1080,7 +1085,7 @@ const CollageEditor: React.FC = () => {
                       fontWeight: newBold ? 'bold' : 'normal',
                       fontStyle: newItalic ? 'italic' : 'normal',
                       textShadow: newShadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
-                    }}>{newText || 'Preview Teks'}</span>
+                    }}>Preview Teks</span>
                   </div>
                   <button type="button" onClick={addTextLayer} disabled={!newText.trim()}
                     className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-semibold transition-colors">
