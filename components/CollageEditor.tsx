@@ -408,127 +408,6 @@ const CellEditor: React.FC<CellEditorProps> = ({
 };
 
 // =============================================
-// TEXT FORM
-// =============================================
-// FIX: Dibungkus React.memo agar tidak re-mount saat parent re-render.
-// FIX: Semua event input pakai stopPropagation() agar tidak ada parent yang
-//      mencegat event keyboard/pointer, yang dulu menyebabkan tidak bisa ketik.
-// =============================================
-interface TextFormProps {
-  onAdd: (layer: TextLayer) => void;
-}
-
-const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
-  // Uncontrolled textarea — tidak ada setState saat mengetik sama sekali.
-  // Semua nilai dibaca via ref hanya saat tombol Tambah ditekan.
-  // Tidak ada event handler pada container yang bisa memblokir fokus.
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const previewRef  = useRef<HTMLSpanElement>(null);
-
-  const [font,   setFont]   = useState('sans');
-  const [color,  setColor]  = useState('#ffffff');
-  const [size,   setSize]   = useState(40);
-  const [bold,   setBold]   = useState(false);
-  const [italic, setItalic] = useState(false);
-  const [shadow, setShadow] = useState(true);
-
-  const syncPreview = (val: string) => {
-    if (previewRef.current)
-      previewRef.current.textContent = val.trim() || 'Preview Teks';
-  };
-
-  const handleAdd = () => {
-    const t = (textareaRef.current?.value ?? '').trim();
-    if (!t) return;
-    onAdd({ kind:'text', id:`t_${Date.now()}`, text:t, font, color, size, bold, italic, shadow, x:50, y:50, rotation:0 });
-    if (textareaRef.current) textareaRef.current.value = '';
-    syncPreview('');
-  };
-
-  return (
-    <div className="p-3 space-y-3">
-      <div>
-        <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
-        {/*
-          - Tidak ada prop value / defaultValue → uncontrolled
-          - Tidak ada stopPropagation / preventDefault di container
-          - touch-action: manipulation → mencegah double-tap zoom TANPA
-            memblokir fokus / keyboard virtual di mobile
-          - textarea lebih reliabel dari input di mobile browser
-        */}
-        <textarea
-          ref={textareaRef}
-          rows={2}
-          onInput={e => syncPreview((e.target as HTMLTextAreaElement).value)}
-          placeholder="Ketik teks di sini..."
-          style={{ touchAction: 'manipulation', resize: 'none' }}
-          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-        />
-      </div>
-
-      <div>
-        <label className="block text-[10px] text-slate-400 mb-1">Font</label>
-        <div className="grid grid-cols-3 gap-1">
-          {FONTS.map(f => (
-            <button key={f.id} type="button" onClick={() => setFont(f.id)}
-              className={`py-1.5 px-2 rounded-lg text-xs border truncate transition-colors ${font===f.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:border-indigo-500/50'}`}
-              style={{ fontFamily: f.css }}>
-              {f.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-[10px] text-slate-400 mb-1">Warna</label>
-        <div className="flex gap-1.5 flex-wrap">
-          {TEXT_COLORS.map(c => (
-            <button key={c} type="button" onClick={() => setColor(c)}
-              className={`w-6 h-6 rounded-full border-2 transition-all ${color===c ? 'border-white scale-125' : 'border-slate-600 hover:scale-110'}`}
-              style={{ background: c }}/>
-          ))}
-          <label className="w-6 h-6 rounded-full border-2 border-slate-500 overflow-hidden cursor-pointer" style={{ background: color }}>
-            <input type="color" value={color} onChange={e => setColor(e.target.value)} className="opacity-0 w-0 h-0"/>
-          </label>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <div className="flex-1">
-          <label className="block text-[10px] text-slate-400 mb-1">Ukuran: {size}px</label>
-          <input type="range" min={12} max={120} value={size} onChange={e => setSize(Number(e.target.value))}
-            className="w-full h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
-        </div>
-        <div className="flex gap-1 pt-4">
-          <button type="button" onClick={() => setBold(v => !v)}
-            className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${bold ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>B</button>
-          <button type="button" onClick={() => setItalic(v => !v)}
-            className={`w-8 h-8 rounded-lg text-sm italic transition-colors ${italic ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>I</button>
-          <button type="button" onClick={() => setShadow(v => !v)}
-            className={`w-8 h-8 rounded-lg text-sm transition-colors ${shadow ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>S</button>
-        </div>
-      </div>
-
-      <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[44px] flex items-center justify-center">
-        <span ref={previewRef} style={{
-          fontFamily: FONTS.find(f => f.id===font)?.css,
-          color, fontSize:`${Math.min(size,36)}px`,
-          fontWeight: bold ? 'bold' : 'normal',
-          fontStyle: italic ? 'italic' : 'normal',
-          textShadow: shadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
-          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-        }}>Preview Teks</span>
-      </div>
-
-      <button type="button" onClick={handleAdd}
-        className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors">
-        + Tambah ke Kolase
-      </button>
-    </div>
-  );
-});
-
-// =============================================
 // MAIN COMPONENT
 // =============================================
 interface StagedPhoto {
@@ -555,6 +434,16 @@ const CollageEditor: React.FC = () => {
   const [selectedLayer, setSelectedLayer] = useState<string | null>(null);
   const [activeTab, setActiveTab]       = useState<'foto'|'teks'|'stiker'>('foto');
   const [showStickerGroup, setShowStickerGroup] = useState('Panah');
+
+  // ── State form teks (inline di CollageEditor) ──
+  const [tfFont,   setTfFont]   = useState('sans');
+  const [tfColor,  setTfColor]  = useState('#ffffff');
+  const [tfSize,   setTfSize]   = useState(40);
+  const [tfBold,   setTfBold]   = useState(false);
+  const [tfItalic, setTfItalic] = useState(false);
+  const [tfShadow, setTfShadow] = useState(true);
+  const tfTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const tfPreviewRef  = useRef<HTMLSpanElement>(null);
 
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -708,12 +597,21 @@ const CollageEditor: React.FC = () => {
 
   // ── Layer helpers ──
 
-  // FIX TYPING BUG: Callback di-memoize dengan useCallback agar referensi stabil.
-  // Sebelumnya inline arrow function membuat TextForm menerima prop baru tiap render.
-  const handleAddTextLayer = useCallback((layer: TextLayer) => {
+  // Tambah layer teks — baca nilai langsung dari DOM ref, tidak dari state
+  const addTextLayerFromForm = () => {
+    const t = (tfTextareaRef.current?.value ?? '').trim();
+    if (!t) return;
+    const layer: TextLayer = {
+      kind: 'text', id: `t_${Date.now()}`,
+      text: t, font: tfFont, color: tfColor, size: tfSize,
+      bold: tfBold, italic: tfItalic, shadow: tfShadow,
+      x: 50, y: 50, rotation: 0,
+    };
     setLayers(prev => [...prev, layer]);
     setSelectedLayer(layer.id);
-  }, []);
+    if (tfTextareaRef.current) tfTextareaRef.current.value = '';
+    if (tfPreviewRef.current) tfPreviewRef.current.textContent = 'Preview Teks';
+  };
 
   const addStickerLayer = useCallback((symbol: string) => {
     const layer: StickerLayer = {
@@ -1092,12 +990,78 @@ const CollageEditor: React.FC = () => {
                 ))}
               </div>
 
-              {/* TextForm SELALU di-mount (hanya disembunyikan via CSS).
-                  Diletakkan di LUAR overflow-hidden agar keyboard mobile tidak terblokir.
-                  display:none/block bukan unmount → ref textarea tetap valid. */}
-              <div style={{ display: activeTab === 'teks' ? 'block' : 'none' }}>
-                <TextForm onAdd={handleAddTextLayer} />
-              </div>
+              {/* Form teks diinline langsung — tidak ada komponen terpisah,
+                  tidak ada prop, tidak ada boundary yang bisa memblokir fokus */}
+              {activeTab === 'teks' && (
+                <div className="p-3 space-y-3">
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
+                    <textarea
+                      ref={tfTextareaRef}
+                      rows={2}
+                      placeholder="Ketik teks di sini..."
+                      onInput={e => {
+                        if (tfPreviewRef.current)
+                          tfPreviewRef.current.textContent = (e.target as HTMLTextAreaElement).value || 'Preview Teks';
+                      }}
+                      style={{ resize: 'none' }}
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Font</label>
+                    <div className="grid grid-cols-3 gap-1">
+                      {FONTS.map(f => (
+                        <button key={f.id} type="button" onClick={() => setTfFont(f.id)}
+                          className={`py-1.5 px-2 rounded-lg text-xs border truncate transition-colors ${tfFont===f.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-700/60 border-slate-600 text-slate-300 hover:border-indigo-500/50'}`}
+                          style={{ fontFamily: f.css }}>{f.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-400 mb-1">Warna</label>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {TEXT_COLORS.map(c => (
+                        <button key={c} type="button" onClick={() => setTfColor(c)}
+                          className={`w-6 h-6 rounded-full border-2 transition-all ${tfColor===c ? 'border-white scale-125' : 'border-slate-600 hover:scale-110'}`}
+                          style={{ background: c }}/>
+                      ))}
+                      <label className="w-6 h-6 rounded-full border-2 border-slate-500 overflow-hidden cursor-pointer" style={{ background: tfColor }}>
+                        <input type="color" value={tfColor} onChange={e => setTfColor(e.target.value)} className="opacity-0 w-0 h-0"/>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[10px] text-slate-400 mb-1">Ukuran: {tfSize}px</label>
+                      <input type="range" min={12} max={120} value={tfSize} onChange={e => setTfSize(Number(e.target.value))}
+                        className="w-full h-2 rounded-full appearance-none cursor-pointer accent-indigo-500 bg-slate-700"/>
+                    </div>
+                    <div className="flex gap-1 pt-4">
+                      <button type="button" onClick={() => setTfBold(v => !v)}
+                        className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${tfBold ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>B</button>
+                      <button type="button" onClick={() => setTfItalic(v => !v)}
+                        className={`w-8 h-8 rounded-lg text-sm italic transition-colors ${tfItalic ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>I</button>
+                      <button type="button" onClick={() => setTfShadow(v => !v)}
+                        className={`w-8 h-8 rounded-lg text-sm transition-colors ${tfShadow ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>S</button>
+                    </div>
+                  </div>
+                  <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[44px] flex items-center justify-center">
+                    <span ref={tfPreviewRef} style={{
+                      fontFamily: FONTS.find(f => f.id===tfFont)?.css,
+                      color: tfColor, fontSize: `${Math.min(tfSize,36)}px`,
+                      fontWeight: tfBold ? 'bold' : 'normal',
+                      fontStyle: tfItalic ? 'italic' : 'normal',
+                      textShadow: tfShadow ? '1px 1px 3px rgba(0,0,0,0.8)' : 'none',
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    }}>Preview Teks</span>
+                  </div>
+                  <button type="button" onClick={addTextLayerFromForm}
+                    className="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors">
+                    + Tambah ke Kolase
+                  </button>
+                </div>
+              )}
 
               {activeTab === 'stiker' && (
                 <div className="p-3 space-y-3">
