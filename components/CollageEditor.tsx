@@ -225,16 +225,12 @@ const CellEditor: React.FC<CellEditorProps> = ({ cs,idx,isDragOver,isSelected,on
 
 // =============================================
 // TEXT FORM
-// UNCONTROLLED textarea — tidak ada value/onChange → nol re-render saat ketik.
-// Nilai dibaca hanya via ref saat tombol Tambah ditekan.
-// Preview di-sync langsung via DOM (tanpa setState sama sekali).
 // =============================================
 interface TextFormProps {
   onAdd: (layer: TextLayer) => void;
 }
 const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
-  const taRef       = useRef<HTMLTextAreaElement>(null);
-  const previewRef2 = useRef<HTMLSpanElement>(null);
+  const [text, setText] = useState('');
   const [font,   setFont]   = useState('sans');
   const [color,  setColor]  = useState('#ffffff');
   const [size,   setSize]   = useState(40);
@@ -242,35 +238,24 @@ const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
   const [italic, setItalic] = useState(false);
   const [shadow, setShadow] = useState(true);
 
-  const syncPreview = () => {
-    if (previewRef2.current && taRef.current) {
-      previewRef2.current.textContent = taRef.current.value || 'Preview Teks';
-    }
-  };
-
   const handleAdd = () => {
-    const t = (taRef.current?.value ?? '').trim();
+    const t = text.trim();
     if (!t) return;
     onAdd({ kind:'text', id:`t_${Date.now()}`, text:t, font, color, size, bold, italic, shadow, x:50, y:50, rotation:0 });
-    if (taRef.current) taRef.current.value = '';
-    if (previewRef2.current) previewRef2.current.textContent = 'Preview Teks';
+    setText('');
   };
 
   return (
     <div className="p-3 space-y-3">
       <div>
         <label className="block text-[10px] text-slate-400 mb-1">Teks</label>
-        {/* UNCONTROLLED: tidak ada prop value sama sekali.
-            onInput (bukan onChange) untuk sync preview tanpa setState.
-            touch-action:manipulation mencegah double-tap zoom tanpa blokir keyboard. */}
         <textarea
-          ref={taRef}
+          autoFocus
+          value={text}
+          onChange={e => setText(e.target.value)}
           rows={2}
           placeholder="Ketik teks di sini..."
-          onInput={syncPreview}
-          autoFocus
-          style={{ resize:'none', touchAction:'manipulation' }}
-          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+          className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
         />
       </div>
       <div>
@@ -309,8 +294,8 @@ const TextForm: React.FC<TextFormProps> = React.memo(({ onAdd }) => {
         </div>
       </div>
       <div className="bg-slate-900 rounded-lg p-2 text-center min-h-[44px] flex items-center justify-center overflow-hidden">
-        <span ref={previewRef2} style={{fontFamily:FONTS.find(f=>f.id===font)?.css,color,fontSize:`${Math.min(size,36)}px`,fontWeight:bold?'bold':'normal',fontStyle:italic?'italic':'normal',textShadow:shadow?'1px 1px 3px rgba(0,0,0,0.8)':'none',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
-          Preview Teks
+        <span style={{fontFamily:FONTS.find(f=>f.id===font)?.css,color,fontSize:`${Math.min(size,36)}px`,fontWeight:bold?'bold':'normal',fontStyle:italic?'italic':'normal',textShadow:shadow?'1px 1px 3px rgba(0,0,0,0.8)':'none',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+          {text || 'Preview Teks'}
         </span>
       </div>
       <button type="button" onClick={handleAdd}
