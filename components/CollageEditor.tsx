@@ -696,19 +696,30 @@ const CollageEditor: React.FC = () => {
     if (e.touches.length !== 1) return;
     setSelectedLayer(id);
     layerDrag.current = { id, startX: e.touches[0].clientX, startY: e.touches[0].clientY, origX: lx, origY: ly };
-  }, []);
 
-  const handleLayerTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!layerDrag.current || e.touches.length !== 1 || !previewRef.current) return;
-    e.stopPropagation();
-    const rect = previewRef.current.getBoundingClientRect();
-    const dx = (e.touches[0].clientX - layerDrag.current.startX) / rect.width * 100;
-    const dy = (e.touches[0].clientY - layerDrag.current.startY) / rect.height * 100;
-    updateLayer(layerDrag.current.id, {
-      x: Math.max(0, Math.min(100, layerDrag.current.origX + dx)),
-      y: Math.max(0, Math.min(100, layerDrag.current.origY + dy)),
-    });
+    // Gunakan window listener seperti mouse drag — agar drag tetap jalan walau jari keluar element
+    const onMove = (ev: TouchEvent) => {
+      if (!layerDrag.current || ev.touches.length !== 1 || !previewRef.current) return;
+      ev.preventDefault();
+      const rect = previewRef.current.getBoundingClientRect();
+      const dx = (ev.touches[0].clientX - layerDrag.current.startX) / rect.width * 100;
+      const dy = (ev.touches[0].clientY - layerDrag.current.startY) / rect.height * 100;
+      updateLayer(layerDrag.current.id, {
+        x: Math.max(0, Math.min(100, layerDrag.current.origX + dx)),
+        y: Math.max(0, Math.min(100, layerDrag.current.origY + dy)),
+      });
+    };
+    const onEnd = () => {
+      layerDrag.current = null;
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
   }, [updateLayer]);
+
+  // Tidak dipakai lagi — drag ditangani via window listener di handleLayerTouchStart
+  const handleLayerTouchMove = useCallback((_e: React.TouchEvent) => {}, []);
 
   const handleExport = async () => {
     if (!selectedLayout) return;
@@ -1321,17 +1332,17 @@ const CollageEditor: React.FC = () => {
               {/* Preview — pakai position relative + aspect-ratio. 
                   TIDAK overflow-hidden di sini karena akan memotong layer teks.
                   Tiap foto sudah di-clip di dalam CellEditor masing-masing. */}
-              {/* Wrapper: padding-bottom trick → tinggi PASTI ada meski semua children absolute */}
+              {/* ref di SINI — outer wrapper, bukan inner div */}
               <div
+                ref={previewRef}
                 className="w-full rounded-xl shadow-2xl ring-1 ring-slate-700"
                 style={{ position: 'relative', paddingBottom: `${(arH / arW) * 100}%` }}
+                onClick={() => setSelectedLayer(null)}
               >
-                {/* Foto layer — overflow hidden untuk clip foto ke batas canvas */}
+                {/* Foto — overflow:hidden untuk clip foto ke batas */}
                 <div
-                  ref={previewRef}
                   className="absolute inset-0 rounded-xl overflow-hidden"
                   style={{ background: bgColor }}
-                  onClick={() => setSelectedLayer(null)}
                 >
                   {selectedLayout.cells.map((cell, i) => (
                     <div key={`${selectedLayout.id}-${i}`} style={getCellStyle(cell)}>
@@ -1346,13 +1357,7 @@ const CollageEditor: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Layer teks & stiker — absolute inset-0 TANPA overflow hidden → tidak terpotong */}
-                <div
-                  className="absolute inset-0 rounded-xl"
-                  style={{ pointerEvents: 'none' }}
-                  onClick={() => setSelectedLayer(null)}
-                >
-                {/* layers.map di dalam sini */}
+                {/* Layer teks & stiker — langsung di dalam outer wrapper, tanpa container pointer-blocking */}
                 {layers.map(layer => {
                   const isSel = selectedLayer === layer.id;
                   const isText = layer.kind === 'text';
@@ -1431,8 +1436,7 @@ const CollageEditor: React.FC = () => {
                     </div>
                   );
                 })}
-                </div>{/* end layer overlay */}
-              </div>{/* end padding-bottom wrapper */}
+              </div>{/* end preview wrapper */}
 
               {/* Progress dots */}
               <div className="flex items-center gap-2 mt-2">
